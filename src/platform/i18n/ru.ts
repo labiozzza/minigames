@@ -82,12 +82,5 @@ export const ru = {
   'err.level': 'Не удалось построить уровень. Проверьте соединение и нажмите «Повторить».',
   'err.retry': 'Повторить',
   'common.toCatalog': 'В каталог',
-  'dev.title': 'Панель разработчика (только DEV)',
-  'dev.level': 'Уровень №',
-  'dev.open': 'Открыть',
-  'dev.truth': 'Показать истинные цвета',
-  'dev.playSolution': 'Пройти решением',
-  'dev.checkHint': 'Проверить подсказку',
-  'dev.metrics': 'Метрики',
 } as const;
 export type RuKey = keyof typeof ru;

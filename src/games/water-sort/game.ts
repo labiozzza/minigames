@@ -112,7 +112,8 @@ export class WaterSortGame implements GameHandle {
       this.attachGlobal();
       this.maybeTutorial();
       this.startAudio();
-      if (ctx.dev && import.meta.env.DEV) {
+      // Static DEV check first so bundlers drop this branch (and the module) in production.
+      if (import.meta.env.DEV && ctx.dev) {
         void import('./dev/panel').then((m) => {
           if (!this.disposed) m.attachDevPanel(this.root, this.devApi());
         });

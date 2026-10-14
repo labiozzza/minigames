@@ -82,11 +82,4 @@ export const en = {
   'err.level': 'Could not build the level. Check and press Retry.',
   'err.retry': 'Retry',
   'common.toCatalog': 'To catalog',
-  'dev.title': 'Developer panel (DEV only)',
-  'dev.level': 'Level #',
-  'dev.open': 'Open',
-  'dev.truth': 'Reveal true colors',
-  'dev.playSolution': 'Play solution',
-  'dev.checkHint': 'Check hint',
-  'dev.metrics': 'Metrics',
 } as const;
