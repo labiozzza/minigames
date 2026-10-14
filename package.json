@@ -1,0 +1,31 @@
+{
+  "name": "minigames",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "preview": "vite preview --port 4173 --strictPort --host 127.0.0.1",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit --pretty false",
+    "test": "vitest run tests/unit",
+    "test:levels": "vitest run tests/levels --testTimeout 120000 --hookTimeout 120000",
+    "test:e2e": "playwright test",
+    "icons": "node tools/make-icons.mjs",
+    "prebuild": "npm run icons"
+  },
+  "dependencies": {
+    "phaser": "4.2.1"
+  },
+  "devDependencies": {
+    "typescript": "~5.6.3",
+    "vite": "^6.3.5",
+    "vite-plugin-pwa": "^1.0.0",
+    "@playwright/test": "^1.52.0",
+    "vitest": "^3.2.4"
+  }
+}
