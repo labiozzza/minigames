@@ -36,6 +36,16 @@ export type { TubeLayout };
 
 export type PourStage = 'idle' | 'lift' | 'move' | 'tilt' | 'pour' | 'return' | 'settle';
 
+/**
+ * Total flight time for a pour of `count` blocks: the base flight plus one
+ * extra unit window per additional block, so every block gets visible pour
+ * time instead of being teleported.
+ */
+export function pourAnimTotal(count: number, durMs: number): number {
+  const unitMs = Math.max(160, Math.min(420, durMs * 0.5));
+  return durMs + 560 + Math.max(0, count - 1) * unitMs;
+}
+
 export interface PourAudit {
   /** The source container stayed visible for the whole pour phase. */
   srcVisible: boolean;
@@ -381,7 +391,6 @@ export class SortScene extends Phaser.Scene {
     const fGeom = this.tubeGeom(fromIdx);
     const tGeom = this.tubeGeom(toIdx);
     const moved = fromBefore.slice(-count);
-    const tgtShown = toBefore.concat(moved);
     const topHidden = moved.length > 0 && moved[moved.length - 1].hidden;
     const pourColor = moved.length > 0 && !topHidden
       ? paletteColor(moved[moved.length - 1].color, theme)
@@ -401,7 +410,7 @@ export class SortScene extends Phaser.Scene {
     this.lastAudit = null;
     this.stage = 'lift';
     const phase = { p: 0 };
-    const total = durMs + 560;
+    const total = pourAnimTotal(count, durMs);
     // Target keeps its pre-move picture until the pour phase.
     this.drawLiquid(t.liquid, tGeom.tubeW, tGeom.tubeH, toBefore, theme, 1, 0);
 
@@ -464,9 +473,37 @@ export class SortScene extends Phaser.Scene {
                   : 'move'
                 : 'tilt'
               : 'tilt';
-        this.drawLiquid(f.liquid, fGeom.tubeW, fGeom.tubeH, fromBefore, theme, 1 - pourP, wob);
-        this.drawLiquid(t.liquid, tGeom.tubeW, tGeom.tubeH, tgtShown, theme, pourP, wob * 0.7);
-        const sw = pourP > 0 && pourP < 1 ? 5 + Math.sin(pourP * Math.PI) * 5 : 0;
+        // Per-unit progress: each block visibly drains from the source and
+        // grows in the target before the next one starts (no teleporting).
+        const uc = Math.min(count, pourP * count);
+        const k = Math.min(count, Math.floor(uc));
+        const frac = uc - k;
+        const n = fromBefore.length;
+        let srcShown: ViewLayer[];
+        let srcFrac: number;
+        if (frac <= 0.001) {
+          srcShown = fromBefore.slice(0, Math.max(0, n - k));
+          srcFrac = 1;
+        } else {
+          srcShown = fromBefore.slice(0, Math.max(0, n - k));
+          srcFrac = 1 - frac;
+        }
+        const dstFull = toBefore.concat(moved.slice(0, k));
+        let dstShown: ViewLayer[];
+        let dstFrac: number;
+        if (frac > 0.001 && k < moved.length) {
+          dstShown = dstFull.concat([moved[k]]);
+          dstFrac = frac;
+        } else {
+          dstShown = dstFull;
+          dstFrac = 1;
+        }
+        this.drawLiquid(f.liquid, fGeom.tubeW, fGeom.tubeH, srcShown, theme, srcFrac, wob);
+        this.drawLiquid(t.liquid, tGeom.tubeW, tGeom.tubeH, dstShown, theme, dstFrac, wob * 0.7);
+        // Stream pulses once per block with a visible gap at unit boundaries.
+        const sw = pourP > 0 && pourP < 1 && frac > 0.02 && frac < 0.98
+          ? 5 + Math.sin(frac * Math.PI) * 5
+          : 0;
         drawStream(pourP * 10, sw);
         if (pourP > 0.15 && pourP < 0.85 && !this.lastAudit) {
           const hw = sw / 2;

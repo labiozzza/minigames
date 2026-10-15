@@ -20,7 +20,7 @@ import type { GeneratedPuzzle } from './generation/generator';
 import { speedMs } from '../../platform/settings/store';
 import { AudioEngine, vibrate } from '../../audio/engine';
 import { button, confirmDialog, el, modal, toast } from '../../platform/ui/ui';
-import { SortScene, type ViewLayer } from './presentation/scene';
+import { SortScene, pourAnimTotal, type ViewLayer } from './presentation/scene';
 import type { GameContext, GameHandle } from '../../platform/games/registry';
 import type { WaterSortSessionSave } from '../../platform/storage/save';
 
@@ -56,6 +56,8 @@ export class WaterSortGame implements GameHandle {
   private audio = new AudioEngine();
   private selected: number | null = null;
   private animating = false;
+  /** Pour tapped while another pour is still animating; chained on completion. */
+  private queuedPour: { from: number; to: number } | null = null;
   private disposed = false;
   private webglOk = false;
   private onKey = (e: KeyboardEvent) => this.handleKey(e);
@@ -261,12 +263,21 @@ export class WaterSortGame implements GameHandle {
   }
 
   private async onTap(i: number): Promise<void> {
-    if (this.animating || this.disposed || !this.webglOk || this.modalOpen()) return;
+    if (this.disposed || !this.webglOk || this.modalOpen()) return;
     if (this.tut && (this.tut.awaiting === 'select' || this.tut.awaiting === 'pour')) {
+      // Scripted tutorial: the animation must finish first so each step
+      // stays observable; wrong taps still get feedback as before.
       if (this.tut.expectTube !== i) {
         this.wrongTap(i);
         return;
       }
+      if (this.animating) return;
+    } else if (this.animating) {
+      // Free play: taps during a pour are not swallowed — selection applies
+      // immediately against the already-updated session, a second tap queues
+      // the next pour and chains automatically when the flight finishes.
+      this.tapDuringAnimation(i);
+      return;
     }
     this.audio.unlock();
     if (this.selected === null) {
@@ -285,6 +296,31 @@ export class WaterSortGame implements GameHandle {
     }
     const from = this.selected;
     await this.tryPour(from, i);
+  }
+
+  /**
+   * Free-play tap while a pour is animating. The session is already updated
+   * synchronously at pour start, so selection can apply immediately; a
+   * complete from→to pair is queued and chained when the flight finishes.
+   */
+  private tapDuringAnimation(i: number): void {
+    this.audio.unlock();
+    if (this.selected === null) {
+      if (this.session.tubes[i].layers.length === 0) return;
+      this.selected = i;
+      this.scene?.setSelected(i);
+      this.audio.select();
+      return;
+    }
+    if (this.selected === i) {
+      this.selected = null;
+      this.scene?.setSelected(null);
+      this.queuedPour = null;
+      this.audio.ui();
+      return;
+    }
+    this.queuedPour = { from: this.selected, to: i };
+    this.audio.select();
   }
 
   private snapshotView(): ViewLayer[][] {
@@ -306,7 +342,7 @@ export class WaterSortGame implements GameHandle {
     this.animating = true;
     this.refreshChrome();
     const dur = speedMs(this.ctx.settings).pour;
-    this.audio.pour(dur / 1000);
+    this.audio.pour(pourAnimTotal(res.move.count, dur) / 1000);
     if (this.ctx.settings.vibration) vibrate(12);
     const fromBefore = before[from];
     const toBefore = before[to];
@@ -326,6 +362,10 @@ export class WaterSortGame implements GameHandle {
       this.advanceTutorial();
     }
     this.checkWin();
+    // Chain a pour tapped mid-flight (dropped when the win modal is up).
+    const qp = this.queuedPour;
+    this.queuedPour = null;
+    if (qp && !this.disposed && !this.modalOpen()) await this.tryPour(qp.from, qp.to);
   }
 
   private updateCompleted(): void {
@@ -348,6 +388,7 @@ export class WaterSortGame implements GameHandle {
       }
     }
     if (!undoSession(this.session)) return;
+    this.queuedPour = null;
     this.clearHint();
     this.audio.ui();
     this.scene?.render();
@@ -378,6 +419,7 @@ export class WaterSortGame implements GameHandle {
       if (!ok) return;
     }
     restartSession(this.session);
+    this.queuedPour = null;
     this.clearHint();
     this.audio.ui();
     this.scene?.render();
@@ -896,7 +938,9 @@ export class WaterSortGame implements GameHandle {
   }
 
   private handleKey(e: KeyboardEvent): void {
-    if (this.disposed || this.animating || this.modalOpen()) return;
+    // Taps are routed to onTap even mid-animation: free-play taps queue the
+    // next pour instead of being swallowed (see tapDuringAnimation).
+    if (this.disposed || this.modalOpen()) return;
     if (e.key === 'Escape') {
       this.selected = null;
       this.scene?.setSelected(null);
@@ -1003,6 +1047,7 @@ export class WaterSortGame implements GameHandle {
           : null,
         stage: this.scene?.stage ?? 'idle',
         audit: this.scene?.lastAudit ?? null,
+        queued: this.queuedPour,
       }),
     };
   }
