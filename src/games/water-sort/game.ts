@@ -1001,6 +1001,8 @@ export class WaterSortGame implements GameHandle {
               expectButton: this.tut.expectButton,
             }
           : null,
+        stage: this.scene?.stage ?? 'idle',
+        audit: this.scene?.lastAudit ?? null,
       }),
     };
   }
