@@ -275,6 +275,13 @@ export class Shell {
       ? 'Соберите каждый цвет в отдельной пробирке: два нажатия — выбрать и перелить. Переливать можно на тот же цвет или в пустую пробирку. Скрытые слои «?» открываются, когда оказываются сверху, и остаются известными.'
       : 'Collect each color in its own tube: two taps — select and pour. You may pour onto the same color or into an empty tube. Hidden "?" layers reveal when on top and stay known.';
     box.appendChild(p);
+    const row = el('div', 'modal-row');
+    row.append(
+      button(this.lang === 'ru' ? '🎓 Повторить обучение' : '🎓 Replay tutorial', 'btn', () => {
+        window.dispatchEvent(new CustomEvent('mg:replay-tutorial'));
+      }, 'replay tutorial'),
+    );
+    box.appendChild(row);
   }
 
   // ---------- Export / import ----------

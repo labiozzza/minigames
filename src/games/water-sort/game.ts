@@ -13,6 +13,8 @@ import {
 } from './domain/model';
 import { toPublic } from './domain/mystery';
 import { suggestHint } from './solver/hint';
+import { findEmptyTarget, findFirstSource, findMatchingTarget, findScoutPour } from './tutorial/logic';
+import { TutorialOverlay } from './tutorial/overlay';
 import { requestLevel } from './generation/async';
 import type { GeneratedPuzzle } from './generation/generator';
 import { speedMs } from '../../platform/settings/store';
@@ -36,6 +38,19 @@ export class WaterSortGame implements GameHandle {
   private modalRoot!: HTMLElement;
   private titleEl!: HTMLElement;
   private undoBtn!: HTMLButtonElement;
+  private restartBtn!: HTMLButtonElement;
+  private hintBtn!: HTMLButtonElement;
+  private tut: {
+    mode: 'basic' | 'mystery';
+    step: number;
+    awaiting: 'select' | 'pour' | 'button' | 'card';
+    expectTube: number | null;
+    expectButton: 'undo' | 'hint' | null;
+    expectPour: { from: number; to: number } | null;
+    overlay: TutorialOverlay;
+    stash: { f: number; t: number } | null;
+  } | null = null;
+  private onReplayTut = () => this.startBasicTutorial(true);
   private game: Phaser.Game | null = null;
   private scene: SortScene | null = null;
   private audio = new AudioEngine();
@@ -110,7 +125,8 @@ export class WaterSortGame implements GameHandle {
     if (this.webglOk) {
       this.refreshChrome();
       this.attachGlobal();
-      this.maybeTutorial();
+      // The tutorial starts on scene ready (Phaser creates objects async).
+      if (this.sceneReady) this.maybeTutorial();
       this.startAudio();
       // Static DEV check first so bundlers drop this branch (and the module) in production.
       if (import.meta.env.DEV && ctx.dev) {
@@ -156,9 +172,9 @@ export class WaterSortGame implements GameHandle {
 
     const bottom = el('nav', 'bottombar');
     this.undoBtn = button('↩', 'action-btn', () => void this.onUndo(), t('game.undo'));
-    const restart = button('⟳', 'action-btn', () => void this.onRestart(), t('game.restart'));
-    const hint = button('💡', 'action-btn', () => void this.onHint(), t('game.hint'));
-    bottom.append(this.undoBtn, restart, hint);
+    this.restartBtn = button('⟳', 'action-btn', () => void this.onRestart(), t('game.restart'));
+    this.hintBtn = button('💡', 'action-btn', () => void this.onHint(), t('game.hint'));
+    bottom.append(this.undoBtn, this.restartBtn, this.hintBtn);
 
     this.toastRoot = el('div', 'toast-root');
     this.modalRoot = el('div', 'modal-root');
@@ -190,6 +206,14 @@ export class WaterSortGame implements GameHandle {
         theme: () => (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'),
         symbols: () => this.ctx.settings.symbols,
         onTap: (i) => void this.onTap(i),
+        canvasBox: () => {
+          const c = this.fieldEl.querySelector('canvas');
+          if (!c) return null;
+          const r = c.getBoundingClientRect();
+          return { x: r.x, y: r.y, width: r.width, height: r.height };
+        },
+        onReady: () => this.handleSceneReady(),
+        onRelayout: () => this.refreshTutPointer(),
       });
       const w = Math.max(200, this.fieldEl.clientWidth || window.innerWidth);
       const h = Math.max(300, this.fieldEl.clientHeight || window.innerHeight - 220);
@@ -238,12 +262,19 @@ export class WaterSortGame implements GameHandle {
 
   private async onTap(i: number): Promise<void> {
     if (this.animating || this.disposed || !this.webglOk || this.modalOpen()) return;
+    if (this.tut && (this.tut.awaiting === 'select' || this.tut.awaiting === 'pour')) {
+      if (this.tut.expectTube !== i) {
+        this.wrongTap(i);
+        return;
+      }
+    }
     this.audio.unlock();
     if (this.selected === null) {
       if (this.session.tubes[i].layers.length === 0) return;
       this.selected = i;
       this.scene?.setSelected(i);
       this.audio.select();
+      if (this.tut && this.tut.awaiting === 'select') this.advanceTutorial();
       return;
     }
     if (this.selected === i) {
@@ -290,6 +321,10 @@ export class WaterSortGame implements GameHandle {
     this.updateCompleted();
     await this.persist();
     this.refreshChrome();
+    if (this.tut && this.tut.awaiting === 'pour' && this.tut.expectPour &&
+      this.tut.expectPour.from === from && this.tut.expectPour.to === to) {
+      this.advanceTutorial();
+    }
     this.checkWin();
   }
 
@@ -306,6 +341,12 @@ export class WaterSortGame implements GameHandle {
 
   private async onUndo(): Promise<void> {
     if (this.animating || this.disposed) return;
+    if (this.tut && this.tut.awaiting === 'button') {
+      if (this.tut.expectButton !== 'undo') {
+        this.tut.overlay.pulse();
+        return;
+      }
+    }
     if (!undoSession(this.session)) return;
     this.clearHint();
     this.audio.ui();
@@ -313,6 +354,9 @@ export class WaterSortGame implements GameHandle {
     this.updateCompletedQuiet();
     await this.persist();
     this.refreshChrome();
+    if (this.tut && this.tut.awaiting === 'button' && this.tut.expectButton === 'undo') {
+      this.advanceTutorial();
+    }
   }
 
   private updateCompletedQuiet(): void {
@@ -344,6 +388,12 @@ export class WaterSortGame implements GameHandle {
 
   private async onHint(): Promise<void> {
     if (this.animating || this.disposed) return;
+    if (this.tut && this.tut.awaiting === 'button') {
+      if (this.tut.expectButton !== 'hint') {
+        this.tut.overlay.pulse();
+        return;
+      }
+    }
     this.audio.unlock();
     const pub = toPublic(this.session.tubes, this.session.known);
     let hint = null;
@@ -363,6 +413,9 @@ export class WaterSortGame implements GameHandle {
       this.toastRoot,
       `${this.ctx.t(hint.kind === 'hint' ? 'game.hintLabel' : 'game.scoutLabel')}: ${hint.from + 1} → ${hint.to + 1}`,
     );
+    if (this.tut && this.tut.awaiting === 'button' && this.tut.expectButton === 'hint') {
+      this.advanceTutorial();
+    }
   }
 
   private clearHint(): void {
@@ -481,48 +534,330 @@ export class WaterSortGame implements GameHandle {
     window.dispatchEvent(new CustomEvent('mg:exit-catalog'));
   }
 
-  // ---------- Tutorials ----------
+  // ---------- Interactive tutorials ----------
+  // Action-first: the player performs real moves on highlighted tubes.
+  // Input outside the expected target is gently blocked (no state change).
+
+  private sceneReady = false;
+
+  private handleSceneReady(): void {
+    this.sceneReady = true;
+    if (!this.tut) this.maybeTutorial();
+    else this.refreshTutPointer();
+  }
+
+  /** Re-point the tutorial ring after relayouts (positions changed). */
+  private refreshTutPointer(): void {
+    const tut = this.tut;
+    if (!tut) return;
+    if (tut.expectTube !== null && (tut.awaiting === 'select' || tut.awaiting === 'pour')) {
+      this.pointTube(tut.expectTube, tut.awaiting === 'select' ? 'up' : 'down');
+    } else if (tut.awaiting === 'button') {
+      if (tut.expectButton === 'undo') this.pointEl(this.undoBtn);
+      else if (tut.expectButton === 'hint') this.pointEl(this.hintBtn);
+    }
+  }
 
   private maybeTutorial(): void {
     const ws = this.ws;
     if (this.level === 1 && !ws.tutorialBasic) {
-      this.runTutorial(['tut1.1', 'tut1.2', 'tut1.3'], () => {
-        ws.tutorialBasic = true;
-        void this.persist();
-      });
+      this.startBasicTutorial(false);
     } else if (this.level >= 101 && this.hidden.size > 0 && !ws.tutorialMystery) {
-      this.runTutorial(['tut2.1', 'tut2.2', 'tut2.3'], () => {
-        ws.tutorialMystery = true;
-        void this.persist();
-      });
+      this.startMysteryTutorial();
     }
   }
 
-  runTutorial(keys: string[], onDone: () => void): void {
-    const { t } = this.ctx;
-    const overlay = el('div', 'tutorial');
-    let i = 0;
-    const card = el('div', 'tutorial-card');
-    const text = el('p', '', t(keys[0]));
-    const row = el('div', 'modal-row');
-    const skip = button(t('tutorial.skip'), 'btn', () => {
-      overlay.remove();
-      onDone();
-    }, t('tutorial.skip'));
-    const next = button(t('tutorial.next'), 'btn primary', () => {
-      i++;
-      if (i >= keys.length) {
-        overlay.remove();
-        onDone();
-        return;
+  private wrongTap(i: number): void {
+    this.scene?.shake(i);
+    this.audio.error();
+    this.tut?.overlay.pulse();
+  }
+
+  private tubePoint(i: number): { x: number; y: number } | null {
+    const c = this.scene?.tubeClientPos(i);
+    if (!c) return null;
+    const r = this.root.getBoundingClientRect();
+    return { x: c.x - r.left, y: c.y - r.top };
+  }
+
+  private elPoint(elm: HTMLElement): { x: number; y: number } {
+    const b = elm.getBoundingClientRect();
+    const r = this.root.getBoundingClientRect();
+    return { x: b.left - r.left + b.width / 2, y: b.top - r.top + b.height / 2 };
+  }
+
+  private pubNow() {
+    return toPublic(this.session.tubes, this.session.known);
+  }
+
+  private tutCardSkip(): void {
+    if (!this.tut) return;
+    this.tut.overlay.setActions([
+      {
+        label: this.ctx.t('tutorial.skip'),
+        primary: false,
+        onClick: () => this.finishTutorial(),
+        aria: this.ctx.t('tutorial.skip'),
+      },
+    ]);
+  }
+
+  private startBasicTutorial(manual: boolean): void {
+    if (this.tut || !this.webglOk) return;
+    if (!manual && this.session.history.length > 0) return;
+    const overlay = new TutorialOverlay(this.root);
+    this.tut = {
+      mode: 'basic', step: 0, awaiting: 'select', expectTube: null,
+      expectButton: null, expectPour: null, overlay, stash: null,
+    };
+    this.tutCardSkip();
+    this.basicStep();
+  }
+
+  private basicStep(): void {
+    const tut = this.tut;
+    if (!tut) return;
+    const t = this.ctx.t.bind(this.ctx);
+    const pub = this.pubNow();
+    switch (tut.step) {
+      case 0: {
+        const src = findFirstSource(pub);
+        if (src === null) {
+          this.finishTutorial();
+          return;
+        }
+        tut.awaiting = 'select';
+        tut.expectTube = src;
+        tut.stash = null;
+        this.pointTube(src, 'up');
+        tut.overlay.setText(t('tut.tapSrc'));
+        break;
       }
-      text.textContent = t(keys[i]);
-      if (i === keys.length - 1) next.textContent = t('tutorial.done');
-    }, t('tutorial.next'));
-    row.append(skip, next);
-    card.append(text, row);
-    overlay.appendChild(card);
-    this.root.appendChild(overlay);
+      case 1: {
+        const from = tut.expectTube ?? 0;
+        const dst = findMatchingTarget(pub, from) ?? findEmptyTarget(pub, from);
+        if (dst === null) {
+          this.finishTutorial();
+          return;
+        }
+        tut.awaiting = 'pour';
+        tut.expectTube = dst;
+        tut.expectPour = { from, to: dst };
+        this.pointTube(dst, 'down');
+        tut.overlay.setText(t('tut.tapDst'));
+        break;
+      }
+      case 2: {
+        const src = findFirstSource(pub);
+        if (src === null) {
+          this.finishTutorial();
+          return;
+        }
+        tut.awaiting = 'select';
+        tut.expectTube = src;
+        tut.expectPour = null;
+        tut.stash = null;
+        this.pointTube(src, 'up');
+        tut.overlay.setText(t('tut.tapSrc'));
+        break;
+      }
+      case 3: {
+        const from = tut.expectTube ?? 0;
+        const dst = findEmptyTarget(pub, from) ?? findMatchingTarget(pub, from);
+        if (dst === null) {
+          tut.step = 4;
+          this.basicStep();
+          return;
+        }
+        tut.awaiting = 'pour';
+        tut.expectTube = dst;
+        tut.expectPour = { from, to: dst };
+        this.pointTube(dst, 'down');
+        tut.overlay.setText(t('tut.tapDst'));
+        break;
+      }
+      case 4: {
+        tut.awaiting = 'button';
+        tut.expectTube = null;
+        tut.expectPour = null;
+        tut.expectButton = 'undo';
+        this.pointEl(this.undoBtn);
+        tut.overlay.setText(t('tut.undo'));
+        break;
+      }
+      case 5: {
+        tut.awaiting = 'button';
+        tut.expectButton = 'hint';
+        this.pointEl(this.hintBtn);
+        tut.overlay.setText(t('tut.hint'));
+        break;
+      }
+      case 6: {
+        tut.awaiting = 'card';
+        tut.expectButton = null;
+        this.pointEl(this.restartBtn);
+        tut.overlay.setText(t('tut.restart'));
+        tut.overlay.setActions([
+          {
+            label: t('tut.ok'), primary: true,
+            onClick: () => this.advanceTutorial(),
+            aria: t('tut.ok'),
+          },
+        ]);
+        break;
+      }
+      default: {
+        tut.awaiting = 'card';
+        tut.overlay.hidePointer();
+        tut.overlay.setText(t('tut.done'));
+        tut.overlay.setActions([
+          {
+            label: t('tut.ok'), primary: true,
+            onClick: () => this.finishTutorial(),
+            aria: t('tut.ok'),
+          },
+        ]);
+        break;
+      }
+    }
+  }
+
+  private startMysteryTutorial(): void {
+    if (this.tut || !this.webglOk) return;
+    const scout = findScoutPour(this.pubNow());
+    const overlay = new TutorialOverlay(this.root);
+    this.tut = {
+      mode: 'mystery', step: 0, awaiting: 'select', expectTube: null,
+      expectButton: null, expectPour: null, overlay, stash: scout,
+    };
+    this.tutCardSkip();
+    if (!scout) {
+      // No revealing move available right now: short info cards instead.
+      this.mysteryInfoFallback();
+      return;
+    }
+    this.mysteryStep();
+  }
+
+  private mysteryInfoFallback(): void {
+    const tut = this.tut;
+    if (!tut) return;
+    const t = this.ctx.t.bind(this.ctx);
+    tut.awaiting = 'card';
+    tut.overlay.hidePointer();
+    tut.overlay.setText(t('tut.mysteryScout'));
+    tut.overlay.setActions([
+      { label: t('tut.ok'), primary: true, onClick: () => this.finishTutorial(), aria: t('tut.ok') },
+    ]);
+  }
+
+  private mysteryStep(): void {
+    const tut = this.tut;
+    if (!tut) return;
+    const t = this.ctx.t.bind(this.ctx);
+    switch (tut.step) {
+      case 0: {
+        const scout = tut.stash ?? findScoutPour(this.pubNow());
+        if (!scout) {
+          this.mysteryInfoFallback();
+          return;
+        }
+        tut.stash = scout;
+        tut.awaiting = 'select';
+        tut.expectTube = scout.f;
+        this.pointTube(scout.f, 'up');
+        tut.overlay.setText(t('tut.mysteryScout'));
+        break;
+      }
+      case 1: {
+        const scout = tut.stash;
+        if (!scout) {
+          this.finishTutorial();
+          return;
+        }
+        tut.awaiting = 'pour';
+        tut.expectTube = scout.t;
+        tut.expectPour = { from: scout.f, to: scout.t };
+        this.pointTube(scout.t, 'down');
+        tut.overlay.setText(t('tut.mysteryScout'));
+        break;
+      }
+      case 2: {
+        tut.awaiting = 'card';
+        tut.expectTube = null;
+        tut.expectPour = null;
+        const dst = tut.stash?.t;
+        if (dst !== undefined && dst !== null) {
+          this.pointTube(dst, 'none');
+          this.scene?.flashReveal(dst, () => undefined);
+        } else {
+          tut.overlay.hidePointer();
+        }
+        tut.overlay.setText(t('tut.mysteryKept'));
+        tut.overlay.setActions([
+          { label: t('tut.ok'), primary: true, onClick: () => this.advanceTutorial(), aria: t('tut.ok') },
+        ]);
+        break;
+      }
+      case 3: {
+        tut.awaiting = 'button';
+        tut.expectButton = 'undo';
+        this.pointEl(this.undoBtn);
+        tut.overlay.setText(t('tut.mysteryUndo'));
+        break;
+      }
+      default: {
+        tut.awaiting = 'card';
+        tut.overlay.hidePointer();
+        tut.overlay.setText(t('tut.done'));
+        tut.overlay.setActions([
+          { label: t('tut.ok'), primary: true, onClick: () => this.finishTutorial(), aria: t('tut.ok') },
+        ]);
+        break;
+      }
+    }
+  }
+
+  private pointTube(i: number, hand: 'up' | 'down' | 'none'): void {
+    const tut = this.tut;
+    if (!tut) return;
+    tut.overlay.setCardTop(false);
+    const p = this.tubePoint(i);
+    if (!p) {
+      tut.overlay.hidePointer();
+      return;
+    }
+    tut.overlay.pointAt(p.x, p.y, hand);
+  }
+
+  private pointEl(elm: HTMLElement): void {
+    if (!this.tut) return;
+    this.tut.overlay.setCardTop(true);
+    const p = this.elPoint(elm);
+    this.tut.overlay.pointAt(p.x, p.y, 'none');
+  }
+
+  private advanceTutorial(): void {
+    const tut = this.tut;
+    if (!tut) return;
+    tut.step++;
+    tut.expectButton = null;
+    if (tut.mode === 'basic') this.basicStep();
+    else this.mysteryStep();
+    // Action steps offer Skip; info steps override actions themselves.
+    if (tut.awaiting !== 'card') this.tutCardSkip();
+  }
+
+  private finishTutorial(): void {
+    const tut = this.tut;
+    if (!tut) return;
+    const ws = this.ws;
+    if (tut.mode === 'basic') ws.tutorialBasic = true;
+    else ws.tutorialMystery = true;
+    this.tut = null;
+    tut.overlay.destroy();
+    this.scene?.render();
+    void this.persist();
   }
 
   // ---------- Persistence ----------
@@ -557,6 +892,7 @@ export class WaterSortGame implements GameHandle {
   private attachGlobal(): void {
     window.addEventListener('keydown', this.onKey);
     document.addEventListener('visibilitychange', this.onVis);
+    window.addEventListener('mg:replay-tutorial', this.onReplayTut);
   }
 
   private handleKey(e: KeyboardEvent): void {
@@ -614,6 +950,9 @@ export class WaterSortGame implements GameHandle {
     this.disposed = true;
     window.removeEventListener('keydown', this.onKey);
     document.removeEventListener('visibilitychange', this.onVis);
+    window.removeEventListener('mg:replay-tutorial', this.onReplayTut);
+    this.tut?.overlay.destroy();
+    this.tut = null;
     try {
       await this.persist();
     } catch { /* best effort */ }
@@ -653,6 +992,15 @@ export class WaterSortGame implements GameHandle {
         selected: this.selected,
         tubes: this.session.tubes.length,
         t0len: this.session.tubes[0]?.layers.length ?? -1,
+        tut: this.tut
+          ? {
+              mode: this.tut.mode,
+              step: this.tut.step,
+              awaiting: this.tut.awaiting,
+              expectTube: this.tut.expectTube,
+              expectButton: this.tut.expectButton,
+            }
+          : null,
       }),
     };
   }
