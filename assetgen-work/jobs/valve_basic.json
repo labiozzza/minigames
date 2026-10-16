@@ -1,0 +1,43 @@
+{
+  "id": "valve_basic",
+  "request": {
+    "game_id": "plumber",
+    "category": "pipes",
+    "style_id": "plumber_2_5d_v1",
+    "logical_cell_px": 256,
+    "pivot": {
+      "x": 0.5,
+      "y": 0.5
+    },
+    "background": "transparent",
+    "output_format": "png",
+    "required_layers": [
+      "back",
+      "water_mask",
+      "front"
+    ],
+    "style_reference_files": [],
+    "acceptance": {
+      "safe_padding_px": 12,
+      "allow_unreviewed": false,
+      "must_align_ports": true
+    },
+    "asset_id": "valve_basic",
+    "kind": "valve-basic",
+    "port_mask": {
+      "top": true,
+      "right": false,
+      "bottom": true,
+      "left": false
+    },
+    "prompt": "Original stylized 2.5D straight pipe with brass valve wheel in center, vertical channel, single asset on truly transparent canvas, no text."
+  },
+  "status": "WAITING_FOR_PROVIDER",
+  "attempts": 0,
+  "max_attempts": 3,
+  "placeholder": "assetgen-work/placeholders/valve_basic.png",
+  "created_at": "2026-10-16T15:34:56.868970+00:00",
+  "history": [],
+  "approved": false,
+  "blocker": "Require OPENAI_API_KEY and explicit --allow-paid for API charges"
+}

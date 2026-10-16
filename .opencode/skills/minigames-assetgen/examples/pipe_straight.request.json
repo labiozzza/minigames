@@ -1,0 +1,16 @@
+{
+  "asset_id": "pipe_straight",
+  "game_id": "plumber",
+  "category": "pipes",
+  "kind": "pipe-straight",
+  "style_id": "plumber_2_5d_v1",
+  "logical_cell_px": 256,
+  "port_mask": {"top": true, "right": false, "bottom": true, "left": false},
+  "pivot": {"x": 0.5, "y": 0.5},
+  "background": "transparent",
+  "output_format": "png",
+  "required_layers": ["back", "water_mask", "front"],
+  "prompt": "Original stylized polished 2.5D transparent glass straight pipe tile, orthographic top-down aligned to the four-sided square game grid, center vertical channel exiting exactly at top and bottom midpoint, soft highlights, clean silhouette, no text, single asset on truly transparent canvas.",
+  "style_reference_files": [],
+  "acceptance": {"safe_padding_px": 12, "allow_unreviewed": false, "must_align_ports": true}
+}
