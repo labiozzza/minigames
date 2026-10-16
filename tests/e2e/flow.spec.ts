@@ -8,7 +8,7 @@ test('catalog -> game -> pours -> hint -> undo -> restart -> win -> next -> cata
   await page.screenshot({ path: `evidence/screenshots/catalog-${suffix}.png` });
 
   // Open Water Sort from the catalog card.
-  await page.locator('.game-card .btn.primary').click();
+  await page.locator('.game-card', { hasText: 'Water Sort' }).locator('.btn.primary').click();
   await waitForGame(page, 1);
   await dismissTutorial(page);
   await setSpeedInstant(page);

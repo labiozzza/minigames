@@ -15,7 +15,7 @@ async function tut(page: import('@playwright/test').Page): Promise<TutDbg | null
 
 test('basic tutorial is completable by actions alone; wrong taps are blocked', async ({ page }) => {
   await page.goto('/');
-  await page.locator('.game-card .btn.primary').click();
+  await page.locator('.game-card', { hasText: 'Water Sort' }).locator('.btn.primary').click();
   await waitForGame(page, 1);
 
   // Spotlight UI is on screen, no text reading required.
@@ -88,7 +88,7 @@ test('mystery tutorial reveals through a real scout pour', async ({ page }) => {
     };
   });
   await page.goto('/');
-  await page.locator('.game-card .btn.primary').click();
+  await page.locator('.game-card', { hasText: 'Water Sort' }).locator('.btn.primary').click();
   await waitForGame(page, 101);
   await page.waitForFunction(
     () => (window as unknown as { __MG: { dbg: () => { tut: unknown } } }).__MG.dbg().tut !== null,

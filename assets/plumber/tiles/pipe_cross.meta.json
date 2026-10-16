@@ -1,0 +1,40 @@
+{
+  "asset_id": "pipe_cross",
+  "status": "READY_FOR_INTEGRATION",
+  "is_placeholder": false,
+  "tile_px": 256,
+  "ports": {
+    "top": true,
+    "right": true,
+    "bottom": true,
+    "left": true
+  },
+  "transform": {
+    "sx": 0.2292,
+    "sy": 0.2292,
+    "tx": -15.7,
+    "ty": -15.6
+  },
+  "openings_px": {
+    "top": [
+      128.0,
+      27.6
+    ],
+    "right": [
+      231.8,
+      128.0
+    ],
+    "bottom": [
+      128.0,
+      228.5
+    ],
+    "left": [
+      24.0,
+      128.0
+    ]
+  },
+  "fit_residual_px": 0.0,
+  "source": "finals/pipe_cross_medium_1.png",
+  "origin": "gpt-image-subscription",
+  "quality": "medium"
+}

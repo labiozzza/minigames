@@ -1,0 +1,154 @@
+{
+  "pipe_straight": {
+    "file": "tiles/pipe_straight.png",
+    "ports": {
+      "top": true,
+      "right": false,
+      "bottom": true,
+      "left": false
+    },
+    "openings_px": {
+      "top": [
+        128.0,
+        24.7
+      ],
+      "bottom": [
+        128.0,
+        230.9
+      ]
+    }
+  },
+  "pipe_elbow": {
+    "file": "tiles/pipe_elbow.png",
+    "ports": {
+      "top": true,
+      "right": true,
+      "bottom": false,
+      "left": false
+    },
+    "openings_px": {
+      "top": [
+        128.0,
+        16.8
+      ],
+      "right": [
+        229.2,
+        128.0
+      ]
+    }
+  },
+  "pipe_t": {
+    "file": "tiles/pipe_t.png",
+    "ports": {
+      "top": true,
+      "right": true,
+      "bottom": false,
+      "left": true
+    },
+    "openings_px": {
+      "top": [
+        128.0,
+        37.2
+      ],
+      "left": [
+        28.7,
+        128.0
+      ],
+      "right": [
+        227.7,
+        128.0
+      ]
+    }
+  },
+  "pipe_cross": {
+    "file": "tiles/pipe_cross.png",
+    "ports": {
+      "top": true,
+      "right": true,
+      "bottom": true,
+      "left": true
+    },
+    "openings_px": {
+      "top": [
+        128.0,
+        27.6
+      ],
+      "right": [
+        231.8,
+        128.0
+      ],
+      "bottom": [
+        128.0,
+        228.5
+      ],
+      "left": [
+        24.0,
+        128.0
+      ]
+    }
+  },
+  "pipe_cap": {
+    "file": "tiles/pipe_cap.png",
+    "ports": {
+      "top": true,
+      "right": false,
+      "bottom": false,
+      "left": false
+    },
+    "openings_px": {
+      "top": [
+        128.0,
+        26.4
+      ]
+    }
+  },
+  "valve_basic": {
+    "file": "tiles/valve_basic.png",
+    "ports": {
+      "top": true,
+      "right": false,
+      "bottom": true,
+      "left": false
+    },
+    "openings_px": {
+      "top": [
+        128.0,
+        22.7
+      ],
+      "bottom": [
+        128.0,
+        232.6
+      ]
+    }
+  },
+  "source_basic": {
+    "file": "tiles/source_basic.png",
+    "ports": {
+      "top": false,
+      "right": true,
+      "bottom": false,
+      "left": false
+    },
+    "openings_px": {
+      "right": [
+        209.4,
+        128.0
+      ]
+    }
+  },
+  "receiver_basic": {
+    "file": "tiles/receiver_basic.png",
+    "ports": {
+      "top": false,
+      "right": false,
+      "bottom": false,
+      "left": true
+    },
+    "openings_px": {
+      "left": [
+        25.1,
+        128.0
+      ]
+    }
+  }
+}

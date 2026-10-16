@@ -1,0 +1,28 @@
+{
+  "asset_id": "pipe_cap",
+  "status": "READY_FOR_INTEGRATION",
+  "is_placeholder": false,
+  "tile_px": 256,
+  "ports": {
+    "top": true,
+    "right": false,
+    "bottom": false,
+    "left": false
+  },
+  "transform": {
+    "sx": 0.2762,
+    "sy": 0.2762,
+    "tx": -53.1,
+    "ty": -33.3
+  },
+  "openings_px": {
+    "top": [
+      128.0,
+      26.4
+    ]
+  },
+  "fit_residual_px": 0.0,
+  "source": "candidates/pipe_cap_low_1.png",
+  "origin": "gpt-image-subscription",
+  "quality": "low"
+}

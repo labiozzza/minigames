@@ -18,7 +18,7 @@ async function dbg(page: Page): Promise<Dbg> {
 
 async function setup(page: Page): Promise<void> {
   await page.goto('/');
-  await page.locator('.game-card .btn.primary').click();
+  await page.locator('.game-card', { hasText: 'Water Sort' }).locator('.btn.primary').click();
   await waitForGame(page, 1);
   await page.locator('.tutorial-card .btn').first().click();
 }

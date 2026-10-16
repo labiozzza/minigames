@@ -86,5 +86,15 @@ export const ru = {
   'err.level': 'Не удалось построить уровень. Проверьте соединение и нажмите «Повторить».',
   'err.retry': 'Повторить',
   'common.toCatalog': 'В каталог',
+  'plumber.name': 'Водопроводчик',
+  'plumber.tag': 'Собери трубы и запусти воду',
+  'plumber.start': '💧 Запустить воду',
+  'plumber.pause': 'Пауза',
+  'plumber.resume': 'Продолжить',
+  'plumber.stop': 'Остановить',
+  'plumber.won': '🎉 Вода дошла! Уровень пройден',
+  'plumber.failed': 'Не получилось — вода не дошла. Поправь трубы и запусти снова',
+  'plumber.next': 'Дальше ›',
+  'plumber.goal': 'Доведи {got}/{goal} до приёмника',
 } as const;
 export type RuKey = keyof typeof ru;

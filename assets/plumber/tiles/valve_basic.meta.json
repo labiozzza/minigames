@@ -1,0 +1,32 @@
+{
+  "asset_id": "valve_basic",
+  "status": "READY_FOR_INTEGRATION",
+  "is_placeholder": false,
+  "tile_px": 256,
+  "ports": {
+    "top": true,
+    "right": false,
+    "bottom": true,
+    "left": false
+  },
+  "transform": {
+    "sx": 0.1665,
+    "sy": 0.1665,
+    "tx": 43.3,
+    "ty": 0.1
+  },
+  "openings_px": {
+    "top": [
+      128.0,
+      22.7
+    ],
+    "bottom": [
+      128.0,
+      232.6
+    ]
+  },
+  "fit_residual_px": 0.0,
+  "source": "finals/valve_basic_medium_1.png",
+  "origin": "gpt-image-subscription",
+  "quality": "medium"
+}

@@ -13,7 +13,7 @@ test('production PWA works fully offline after first load', async ({ page, conte
   await expect(page.locator('.app-title')).toContainText('MiniGames', { timeout: 20000 });
 
   // Full game offline: open, pour, persist across reload.
-  await page.locator('.game-card .btn.primary').click();
+  await page.locator('.game-card', { hasText: 'Water Sort' }).locator('.btn.primary').click();
   await waitForGame(page, 1);
   await dismissTutorial(page);
   await setSpeedInstant(page);
@@ -32,7 +32,7 @@ test('production PWA works fully offline after first load', async ({ page, conte
   // Reload offline keeps the unfinished level (no lost moves).
   await page.reload();
   await expect(page.locator('.app-title')).toContainText('MiniGames', { timeout: 20000 });
-  await page.locator('.game-card .btn.primary').click();
+  await page.locator('.game-card', { hasText: 'Water Sort' }).locator('.btn.primary').click();
   await waitForGame(page, 1);
   await dismissTutorial(page);
   expect((await mg(page)).historyLen).toBe(1);

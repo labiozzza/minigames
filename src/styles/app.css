@@ -59,6 +59,15 @@ button { font: inherit; color: inherit; }
     linear-gradient(180deg, transparent 30%, rgba(56,189,248,.85) 30%, rgba(56,189,248,.85) 62%, transparent 62%),
     linear-gradient(90deg, transparent 0, transparent 0);
 }
+.game-art-plumber { background: linear-gradient(135deg, #0b1020 0%, #123a5c 55%, #0e5a7a 100%); position: relative; overflow: hidden; }
+.game-art-plumber::after {
+  content: ''; position: absolute; inset: 0;
+  background:
+    linear-gradient(90deg, transparent 20%, rgba(47,168,222,.9) 20%, rgba(47,168,222,.9) 38%, transparent 38%),
+    linear-gradient(180deg, transparent 42%, rgba(47,168,222,.55) 42%, rgba(47,168,222,.55) 58%, transparent 58%);
+}
+.plumber-goal { text-align: center; padding: 6px 12px; font-size: 15px; }
+.plumber-banner { text-align: center; padding: 10px 14px; font-size: 16px; }
 .card-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
 .offline-badge { color: var(--good); font-size: 13px; }
 .muted { color: var(--muted); }

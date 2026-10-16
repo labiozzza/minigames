@@ -1,12 +1,14 @@
 import './styles/app.css';
 import { Shell } from './app/shell';
 import { registerWaterSort } from './games/water-sort';
+import { registerPlumber } from './games/plumber';
 import { initInstallCapture, setUpdateFn } from './platform/pwa/pwa';
 // @ts-expect-error virtual module provided by vite-plugin-pwa
 import { registerSW } from 'virtual:pwa-register';
 
 async function bootstrap(): Promise<void> {
   registerWaterSort();
+  registerPlumber();
   initInstallCapture();
   const update = registerSW({
     immediate: false,

@@ -5,6 +5,7 @@ import {
   mergeSaves,
   parseExport,
   sanitizeSave,
+  type WaterSortSave,
 } from '../../src/platform/storage/save';
 import { sanitizeSettings } from '../../src/platform/settings/store';
 import { translate } from '../../src/platform/i18n';
@@ -42,7 +43,7 @@ describe('storage', () => {
     expect(m.games['water-sort']!.completed).toEqual([1, 2, 3, 4]);
     expect(m.games['water-sort']!.maxLevel).toBe(9);
     expect((m.games['water-sort']!.active as unknown as { levelNumber: number }).levelNumber).toBe(3);
-    expect(m.games['water-sort']!.tutorialMystery).toBe(true);
+    expect((m.games['water-sort'] as WaterSortSave).tutorialMystery).toBe(true);
   });
   it('sanitize rejects bad schema and clamps values', () => {
     expect(sanitizeSave({ schemaVersion: 999 })).toBe(null);

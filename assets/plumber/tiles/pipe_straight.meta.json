@@ -1,0 +1,32 @@
+{
+  "asset_id": "pipe_straight",
+  "status": "READY_FOR_INTEGRATION",
+  "is_placeholder": false,
+  "tile_px": 256,
+  "ports": {
+    "top": true,
+    "right": false,
+    "bottom": true,
+    "left": false
+  },
+  "transform": {
+    "sx": 0.2168,
+    "sy": 0.2168,
+    "tx": -3.3,
+    "ty": -10.9
+  },
+  "openings_px": {
+    "top": [
+      128.0,
+      24.7
+    ],
+    "bottom": [
+      128.0,
+      230.9
+    ]
+  },
+  "fit_residual_px": 0.0,
+  "source": "finals/pipe_straight_medium_1.png",
+  "origin": "gpt-image-subscription",
+  "quality": "medium"
+}

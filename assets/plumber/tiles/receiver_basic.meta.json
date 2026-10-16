@@ -1,0 +1,28 @@
+{
+  "asset_id": "receiver_basic",
+  "status": "READY_FOR_INTEGRATION",
+  "is_placeholder": false,
+  "tile_px": 256,
+  "ports": {
+    "top": false,
+    "right": false,
+    "bottom": false,
+    "left": true
+  },
+  "transform": {
+    "sx": 0.2701,
+    "sy": 0.2701,
+    "tx": -31.2,
+    "ty": -46.7
+  },
+  "openings_px": {
+    "left": [
+      25.1,
+      128.0
+    ]
+  },
+  "fit_residual_px": 0.0,
+  "source": "finals/receiver_basic_medium_1.png",
+  "origin": "gpt-image-subscription",
+  "quality": "medium"
+}

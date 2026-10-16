@@ -1,0 +1,83 @@
+{
+ "style_id": "plumber_2_5d_v1",
+ "provider": "chatgpt-subscription (tools/gpt_imagegen_chatgpt.mjs)",
+ "budget": {
+  "low_used": 13,
+  "low_limit": 24,
+  "medium_used": 8,
+  "medium_limit": 16
+ },
+ "assets": {
+  "pipe_straight": {
+   "status": "APPROVED",
+   "file": "assets/plumber/tiles/pipe_straight.png",
+   "source": "assetgen-work/finals/pipe_straight_medium_1.png",
+   "tech": "VALID_TECH"
+  },
+  "pipe_elbow": {
+   "status": "APPROVED",
+   "file": "assets/plumber/tiles/pipe_elbow.png",
+   "source": "assetgen-work/finals/pipe_elbow_medium_1.png",
+   "tech": "VALID_TECH"
+  },
+  "pipe_t": {
+   "status": "APPROVED",
+   "file": "assets/plumber/tiles/pipe_t.png",
+   "source": "assetgen-work/finals/pipe_t_medium_1.png",
+   "note": "faint blue halo invisible at tile scale, verified dark+light",
+   "tech": "VALID_TECH"
+  },
+  "pipe_cross": {
+   "status": "APPROVED",
+   "file": "assets/plumber/tiles/pipe_cross.png",
+   "source": "assetgen-work/finals/pipe_cross_medium_1.png",
+   "tech": "VALID_TECH"
+  },
+  "pipe_cap": {
+   "status": "APPROVED",
+   "file": "assets/plumber/tiles/pipe_cap.png",
+   "source": "assetgen-work/candidates/pipe_cap_low_1.png",
+   "note": "low selected over medium (medium looked like a vase)",
+   "tech": "VALID_TECH"
+  },
+  "valve_basic": {
+   "status": "APPROVED",
+   "file": "assets/plumber/tiles/valve_basic.png",
+   "source": "assetgen-work/finals/valve_basic_medium_1.png",
+   "note": "faint warm halo invisible at tile scale, verified dark+light",
+   "tech": "VALID_TECH"
+  },
+  "source_basic": {
+   "status": "APPROVED",
+   "file": "assets/plumber/tiles/source_basic.png",
+   "source": "assetgen-work/finals/source_basic_medium_1.png",
+   "tech": "VALID_TECH"
+  },
+  "receiver_basic": {
+   "status": "APPROVED",
+   "file": "assets/plumber/tiles/receiver_basic.png",
+   "source": "assetgen-work/finals/receiver_basic_medium_1.png",
+   "tech": "VALID_TECH"
+  }
+ },
+ "integration": {
+  "atlas": "public/assets/plumber/atlas.png",
+  "atlas_json": "public/assets/plumber/atlas.json",
+  "frames": 8,
+  "phaser_screenshots": [
+   "evidence/screenshots/plumber-preparing-desktop.png",
+   "evidence/screenshots/plumber-running-desktop.png",
+   "evidence/screenshots/plumber-win-desktop.png",
+   "evidence/screenshots/plumber-joints-3x3.png"
+  ],
+  "usesFallback_e2e": false
+ },
+ "queue_remaining": [
+  "mixer_basic",
+  "splitter_basic",
+  "switch_basic",
+  "fixed_pipe_variant",
+  "collections x12-16",
+  "decor"
+ ]
+}

@@ -1,0 +1,28 @@
+{
+  "asset_id": "source_basic",
+  "status": "READY_FOR_INTEGRATION",
+  "is_placeholder": false,
+  "tile_px": 256,
+  "ports": {
+    "top": false,
+    "right": true,
+    "bottom": false,
+    "left": false
+  },
+  "transform": {
+    "sx": 0.2104,
+    "sy": 0.2104,
+    "tx": -26.0,
+    "ty": -20.5
+  },
+  "openings_px": {
+    "right": [
+      209.4,
+      128.0
+    ]
+  },
+  "fit_residual_px": 0.0,
+  "source": "finals/source_basic_medium_1.png",
+  "origin": "gpt-image-subscription",
+  "quality": "medium"
+}

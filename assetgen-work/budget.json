@@ -1,0 +1,79 @@
+{
+ "low_used": 13,
+ "low_limit": 24,
+ "medium_used": 8,
+ "medium_limit": 16,
+ "log": [
+  {
+   "asset": "pipe_straight",
+   "quality": "low",
+   "result": "test candidate /tmp/pipe_test_low.png, VALID_TECH, too narrow body"
+  },
+  {
+   "batch": 1,
+   "quality": "low",
+   "assets": [
+    "pipe_straight",
+    "pipe_elbow",
+    "pipe_t",
+    "pipe_cross"
+   ],
+   "result": "all VALID_TECH, style consistent, approved as style direction"
+  },
+  {
+   "batch": 2,
+   "quality": "low",
+   "assets": [
+    "pipe_cap",
+    "valve_basic",
+    "source_basic",
+    "receiver_basic"
+   ],
+   "result": "generated, pending review"
+  },
+  {
+   "event": "review batch2",
+   "approved": [
+    "pipe_cap",
+    "source_basic"
+   ],
+   "rejected": {
+    "valve_basic": "brown glow halo",
+    "receiver_basic": "blue glow halo"
+   },
+   "retries": [
+    "valve_basic low_2",
+    "receiver_basic low_2"
+   ]
+  },
+  {
+   "event": "retry2 flat-lighting",
+   "assets": [
+    "valve_basic low_3",
+    "receiver_basic low_3"
+   ]
+  },
+  {
+   "event": "medium finals batch",
+   "assets": 8,
+   "result": "generated, pending review"
+  },
+  {
+   "event": "selection",
+   "approved_8": [
+    "pipe_straight(m)",
+    "pipe_elbow(m)",
+    "pipe_t(m)",
+    "pipe_cross(m)",
+    "pipe_cap(LOW_1)",
+    "valve_basic(m)",
+    "source_basic(m)",
+    "receiver_basic(m)"
+   ],
+   "rejected_lows": [
+    "valve_basic low_1/low_2 glow",
+    "receiver_basic low_1/low_2 glow"
+   ]
+  }
+ ]
+}

@@ -15,7 +15,7 @@ test('visual matrix: themes, languages, viewports', async ({ page, browserName }
   await shot(page, `catalog-${page.viewportSize()?.width === 390 ? 'mobile' : 'desktop'}`);
 
   // Game level, light RU.
-  await page.locator('.game-card .btn.primary').click();
+  await page.locator('.game-card', { hasText: 'Water Sort' }).locator('.btn.primary').click();
   await waitForGame(page, 1);
   await dismissTutorial(page);
   await setSpeedInstant(page);

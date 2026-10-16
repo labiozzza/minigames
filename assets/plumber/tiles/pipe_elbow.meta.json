@@ -1,0 +1,32 @@
+{
+  "asset_id": "pipe_elbow",
+  "status": "READY_FOR_INTEGRATION",
+  "is_placeholder": false,
+  "tile_px": 256,
+  "ports": {
+    "top": true,
+    "right": true,
+    "bottom": false,
+    "left": false
+  },
+  "transform": {
+    "sx": 0.1929,
+    "sy": 0.1929,
+    "tx": 35.1,
+    "ty": -29.5
+  },
+  "openings_px": {
+    "top": [
+      128.0,
+      16.8
+    ],
+    "right": [
+      229.2,
+      128.0
+    ]
+  },
+  "fit_residual_px": 0.0,
+  "source": "finals/pipe_elbow_medium_1.png",
+  "origin": "gpt-image-subscription",
+  "quality": "medium"
+}

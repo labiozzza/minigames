@@ -35,7 +35,7 @@ async function seedAt101(page: import('@playwright/test').Page): Promise<void> {
 test('mystery level: tutorial, scout hint, reveal kept on undo/restart, clean replay', async ({ page }) => {
   await seedAt101(page);
   await page.goto('/');
-  await page.locator('.game-card .btn.primary').click();
+  await page.locator('.game-card', { hasText: 'Water Sort' }).locator('.btn.primary').click();
   await waitForGame(page, 101);
 
   // Mystery tutorial appears once.

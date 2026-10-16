@@ -1,0 +1,210 @@
+// Plumber Phaser scene: pure presentation of RuntimeState. No game logic here.
+import * as Phaser from 'phaser';
+import { PIPE_CAPACITY, type LevelDefinition } from '../domain/model';
+
+export const TILE = 256;
+
+const KIND_TEXTURE: Record<string, string> = {
+  straight: 'pipe_straight',
+  elbow: 'pipe_elbow',
+  t: 'pipe_t',
+  cross: 'pipe_cross',
+  cap: 'pipe_cap',
+  valve: 'valve_basic',
+  source: 'source_basic',
+  receiver: 'receiver_basic',
+};
+
+const WATER_COLORS: Record<string, number> = {
+  blue: 0x2fa8de,
+  red: 0xe05a4e,
+  yellow: 0xf2c230,
+  green: 0x44b570,
+  purple: 0x9a6ee8,
+};
+
+export interface SceneRefs {
+  onTapCell: (index: number) => void;
+}
+
+export class PlumberScene extends Phaser.Scene {
+  private def!: LevelDefinition;
+  private cell = 96;
+  private ox = 0;
+  private oy = 0;
+  private sprites: Array<Phaser.GameObjects.Image | null> = [];
+  private gfx: Array<Phaser.GameObjects.Graphics> = [];
+  private waterGfx: Array<Phaser.GameObjects.Graphics> = [];
+  private fallback = false;
+  private refs: SceneRefs = { onTapCell: () => undefined };
+  private rots: number[] = [];
+  private colors: Array<string | null> = [];
+  private fractions: number[] = [];
+  private leak = -1;
+  private hint = -1;
+
+  constructor() {
+    super('plumber');
+  }
+
+  init(data: { def: LevelDefinition; refs: SceneRefs }): void {
+    this.def = data.def;
+    this.refs = data.refs;
+  }
+
+  preload(): void {
+    if (!this.textures.exists('plumber-atlas')) {
+      this.load.atlas('plumber', 'assets/plumber/atlas.png', 'assets/plumber/atlas.json');
+    }
+  }
+
+  create(): void {
+    this.fallback = !this.textures.exists('plumber') || !this.textures.get('plumber').has('pipe_straight');
+    this.layout();
+    this.buildCells();
+    this.scale.on('resize', () => {
+      this.layout();
+      this.buildCells();
+      this.redrawAll();
+    });
+    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      const idx = this.pick(p.x, p.y);
+      if (idx >= 0) this.refs.onTapCell(idx);
+    });
+  }
+
+  private layout(): void {
+    const w = this.scale.width;
+    const h = this.scale.height;
+    this.cell = Math.max(40, Math.floor(Math.min(w / this.def.gridW, h / this.def.gridH)));
+    this.ox = Math.floor((w - this.cell * this.def.gridW) / 2);
+    this.oy = Math.floor((h - this.cell * this.def.gridH) / 2);
+  }
+
+  private buildCells(): void {
+    for (const s of this.sprites) s?.destroy();
+    for (const g of [...this.gfx, ...this.waterGfx]) g.destroy();
+    this.sprites = [];
+    this.gfx = [];
+    this.waterGfx = [];
+    const n = this.def.gridW * this.def.gridH;
+    for (let i = 0; i < n; i++) {
+      const { x, y } = this.cellXY(i);
+      const bg = this.add.graphics();
+      bg.fillStyle(0x141c2e, 1);
+      bg.fillRoundedRect(x, y, this.cell, this.cell, Math.max(4, this.cell * 0.08));
+      bg.lineStyle(1, 0x2a3a55, 1);
+      bg.strokeRoundedRect(x, y, this.cell, this.cell, Math.max(4, this.cell * 0.08));
+      this.gfx.push(bg);
+      const kind = this.def.cells[i].kind;
+      const frame = KIND_TEXTURE[kind];
+      if (!this.fallback && frame) {
+        const img = this.add.image(x + this.cell / 2, y + this.cell / 2, 'plumber', frame);
+        img.setDisplaySize(this.cell * 0.96, this.cell * 0.96);
+        img.setData('cell', i);
+        this.sprites.push(img);
+      } else {
+        const g = this.add.graphics();
+        g.setData('cell', i);
+        this.sprites.push(null);
+        this.gfx.push(g);
+      }
+      const wg = this.add.graphics();
+      this.waterGfx.push(wg);
+    }
+    this.redrawAll();
+  }
+
+  cellXY(i: number): { x: number; y: number } {
+    const gx = i % this.def.gridW;
+    const gy = Math.floor(i / this.def.gridW);
+    return { x: this.ox + gx * this.cell, y: this.oy + gy * this.cell };
+  }
+
+  private pick(px: number, py: number): number {
+    const gx = Math.floor((px - this.ox) / this.cell);
+    const gy = Math.floor((py - this.oy) / this.cell);
+    if (gx < 0 || gy < 0 || gx >= this.def.gridW || gy >= this.def.gridH) return -1;
+    return gy * this.def.gridW + gx;
+  }
+
+  /** Full state sync from model (rots, water per cell, extra fractions for endpoints). */
+  sync(rots: number[], _water: number[], colors: Array<string | null>, fractions: number[], leak: number, hint: number, animate: number | null): void {
+    this.rots = [...rots];
+    void _water;
+    this.colors = [...colors];
+    this.fractions = [...fractions];
+    this.leak = leak;
+    this.hint = hint;
+    const n = this.def.gridW * this.def.gridH;
+    for (let i = 0; i < n; i++) {
+      const spr = this.sprites[i];
+      const target = this.rots[i] * 90;
+      if (spr) {
+        if (i === animate) {
+          this.tweens.killTweensOf(spr);
+          this.tweens.add({ targets: spr, angle: spr.angle + 90, duration: 140, ease: 'Sine.easeInOut' });
+        } else {
+          spr.setAngle(target);
+        }
+      }
+    }
+    this.redrawAll();
+  }
+
+  private redrawAll(): void {
+    const n = this.def.gridW * this.def.gridH;
+    for (let i = 0; i < n; i++) this.drawWater(i);
+  }
+
+  private drawWater(i: number): void {
+    const g = this.waterGfx[i];
+    if (!g) return;
+    g.clear();
+    const { x, y } = this.cellXY(i);
+    const frac = this.fractions[i] ?? 0;
+    if (frac <= 0) {
+      if (i === this.leak) {
+        g.fillStyle(0xe05a4e, 0.9);
+        g.fillCircle(x + this.cell / 2, y + this.cell / 2, this.cell * 0.1);
+      }
+      if (i === this.hint) {
+        g.lineStyle(3, 0xf2c230, 1);
+        g.strokeRoundedRect(x + 3, y + 3, this.cell - 6, this.cell - 6, 8);
+      }
+      return;
+    }
+    const color = WATER_COLORS[this.colors[i] ?? 'blue'] ?? 0x2fa8de;
+    const inset = this.cell * 0.3;
+    const wdt = this.cell - inset * 2;
+    const hgt = (this.cell - inset * 2) * Math.min(1, frac);
+    g.fillStyle(color, 0.8);
+    g.fillRoundedRect(x + inset, y + this.cell - inset - hgt, wdt, hgt, Math.min(8, wdt * 0.2));
+    if (i === this.hint) {
+      g.lineStyle(3, 0xf2c230, 1);
+      g.strokeRoundedRect(x + 3, y + 3, this.cell - 6, this.cell - 6, 8);
+    }
+  }
+
+  /** Primitive fallback tile (no atlas): port stubs + TMP badge, dev-visible. */
+  drawFallbackTile(i: number, ports: { top: boolean; right: boolean; bottom: boolean; left: boolean }): void {
+    const g = this.gfx.find((gg) => gg.getData('cell') === i);
+    if (!g) return;
+    void ports;
+  }
+
+  usesFallback(): boolean {
+    return this.fallback;
+  }
+
+  cellCenter(i: number): { x: number; y: number } {
+    const { x, y } = this.cellXY(i);
+    return { x: x + this.cell / 2, y: y + this.cell / 2 };
+  }
+
+  gridDims(): { w: number; h: number; cell: number; ox: number; oy: number } {
+    return { w: this.def.gridW, h: this.def.gridH, cell: this.cell, ox: this.ox, oy: this.oy };
+  }
+}
+
+export { PIPE_CAPACITY };

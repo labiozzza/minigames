@@ -68,7 +68,7 @@ async function findPair(
 
 test('pour stages: lift, tilt, pour, return + visibility audit (desktop)', async ({ page }) => {
   await page.goto('/');
-  await page.locator('.game-card .btn.primary').click();
+  await page.locator('.game-card', { hasText: 'Water Sort' }).locator('.btn.primary').click();
   await waitForGame(page, 1);
   await page.locator('.tutorial-card .btn').first().click();
 
@@ -162,7 +162,7 @@ test('cross-row pour on narrow screen, fast speed (mobile matrix)', async ({ pag
     };
   });
   await page.goto('/');
-  await page.locator('.game-card .btn.primary').click();
+  await page.locator('.game-card', { hasText: 'Water Sort' }).locator('.btn.primary').click();
   await waitForGame(page, 50);
   const { f, t } = await findPair(page, () => true);
   const h0 = (await mg(page)).historyLen;
@@ -179,7 +179,7 @@ test('cross-row pour on narrow screen, fast speed (mobile matrix)', async ({ pag
 
 test('instant speed: no stages, correct logic + undo', async ({ page }) => {
   await page.goto('/');
-  await page.locator('.game-card .btn.primary').click();
+  await page.locator('.game-card', { hasText: 'Water Sort' }).locator('.btn.primary').click();
   await waitForGame(page, 1);
   await page.locator('.tutorial-card .btn').first().click();
   await page.locator('.topbar .top-actions .icon-btn').nth(1).click();

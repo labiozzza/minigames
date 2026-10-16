@@ -20,6 +20,7 @@ export class Shell {
   private settings!: Settings;
   private lang!: Lang;
   private game: GameHandle | null = null;
+  private gameId: string | null = null;
   private gameRoot: HTMLElement | null = null;
   private toastRoot!: HTMLElement;
   private bannerRoot!: HTMLElement;
@@ -109,7 +110,8 @@ export class Shell {
     card.append(el('h3', '', 'Water Sort'));
     card.append(el('p', '', 'Переливашки'));
     const ws = this.save.games['water-sort'];
-    const level = lp?.gameId === 'water-sort' ? lp.levelNumber : (ws?.maxLevel ?? 1);
+    const wsSave = ws && 'maxLevel' in ws ? ws : undefined;
+    const level = lp?.gameId === 'water-sort' ? lp.levelNumber : (wsSave?.maxLevel ?? 1);
     const row = el('div', 'card-row');
     row.append(
       button(this.t('catalog.play'), 'btn primary', () => void this.playGame('water-sort', level), this.t('catalog.play')),
@@ -117,8 +119,23 @@ export class Shell {
     );
     card.appendChild(row);
     grid.appendChild(card);
+
+    const pcard = el('article', 'game-card');
+    const part = el('div', 'game-art game-art-plumber');
+    part.setAttribute('aria-hidden', 'true');
+    pcard.appendChild(part);
+    pcard.append(el('h3', '', this.t('plumber.name')));
+    pcard.append(el('p', '', this.t('plumber.tag')));
+    const ps = this.save.games['plumber'];
+    const psLevel = lp?.gameId === 'plumber' ? lp.levelNumber : (ps && 'maxLevel' in ps ? (ps.maxLevel as number) : 1);
+    const prow = el('div', 'card-row');
+    prow.append(
+      button(this.t('catalog.play'), 'btn primary', () => void this.playGame('plumber', psLevel), this.t('catalog.play')),
+      el('span', 'offline-badge', `✓ ${this.t('catalog.offlineReady')}`),
+    );
+    pcard.appendChild(prow);
+    grid.appendChild(pcard);
     wrap.appendChild(grid);
-    wrap.append(el('p', 'muted', this.t('catalog.oneGame')));
     this.app.appendChild(wrap);
   }
 
@@ -127,6 +144,7 @@ export class Shell {
       await this.game?.unmount();
     } catch { /* ignore */ }
     this.game = null;
+    this.gameId = null;
     this.save = await loadSave();
     this.settings = sanitizeSettings(this.save.settings);
     this.renderCatalog();
@@ -135,6 +153,7 @@ export class Shell {
   async playGame(gameId: string, level: number): Promise<void> {
     const mod = getGame(gameId);
     if (!mod) return;
+    this.gameId = gameId;
     try {
       await this.game?.unmount();
     } catch { /* ignore */ }
@@ -160,8 +179,10 @@ export class Shell {
     };
     try {
       this.game = await mod.mount(ctx);
-    } catch {
+    } catch (err) {
+      console.error(`[shell] mount failed for ${gameId}:`, err);
       this.game = null;
+      this.gameId = null;
       this.renderCatalog();
     }
   }
@@ -225,7 +246,8 @@ export class Shell {
         document.documentElement.lang = s.lang;
         void this.persist().then(() => {
           close();
-          if (this.game) void this.playGame('water-sort', this.save.lastPlayed?.levelNumber ?? 1);
+          const gid = this.gameId ?? 'water-sort';
+          if (this.game) void this.playGame(gid, this.save.lastPlayed?.levelNumber ?? 1);
           else this.renderCatalog();
         });
       })),

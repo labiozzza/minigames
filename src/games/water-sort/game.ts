@@ -22,7 +22,7 @@ import { AudioEngine, vibrate } from '../../audio/engine';
 import { button, confirmDialog, el, modal, toast } from '../../platform/ui/ui';
 import { SortScene, pourAnimTotal, type ViewLayer } from './presentation/scene';
 import type { GameContext, GameHandle } from '../../platform/games/registry';
-import type { WaterSortSessionSave } from '../../platform/storage/save';
+import { getWaterSortSave, type WaterSortSessionSave } from '../../platform/storage/save';
 
 const PAGE = 100;
 
@@ -75,7 +75,7 @@ export class WaterSortGame implements GameHandle {
   }
 
   private get ws() {
-    return this.ctx.save.games['water-sort'] ?? { maxLevel: 1, completed: [], active: null, tutorialBasic: false, tutorialMystery: false };
+    return getWaterSortSave(this.ctx.save);
   }
 
   private async init(): Promise<void> {

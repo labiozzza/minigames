@@ -3,7 +3,7 @@ import { keyFor, legalPour, mg, waitForGame } from './helpers';
 
 test('shot series: tutorial spotlight + mid-pour stream', async ({ page }) => {
   await page.goto('/');
-  await page.locator('.game-card .btn.primary').click();
+  await page.locator('.game-card', { hasText: 'Water Sort' }).locator('.btn.primary').click();
   await waitForGame(page, 1);
   await page.waitForFunction(
     () => (window as unknown as { __MG: { dbg: () => { tut: unknown } } }).__MG.dbg().tut !== null,
