@@ -9,12 +9,13 @@ import {
   type PlumberSessionSave,
 } from '../../src/platform/storage/save';
 import { generateLevel } from '../../src/games/plumber/domain/generator';
-import { applyCommand, createRuntime } from '../../src/games/plumber/domain/model';
+import { applyCommand, createRuntime, snapshot } from '../../src/games/plumber/domain/model';
 
 function fakeActive(levelNumber: number): PlumberSessionSave {
   const def = generateLevel(`save-test-${levelNumber}`, 1000 + levelNumber, { mode: 'child' });
   const s = createRuntime(def);
   applyCommand(s, { type: 'start' });
+  const snap = snapshot(s);
   return {
     levelNumber,
     puzzleId: def.puzzleId,
@@ -22,22 +23,16 @@ function fakeActive(levelNumber: number): PlumberSessionSave {
     mode: def.mode,
     gridW: def.gridW,
     gridH: def.gridH,
-    rots: [...s.rots],
-    water: [...s.water],
-    waterColor: [...s.waterColor],
-    sourceLeft: [...s.sourceLeft],
-    receiverGot: [...s.receiverGot],
-    lost: s.lost,
-    tick: s.tick,
-    phase: s.phase,
+    ...snap,
     def: {
       cells: def.cells.map((c) => ({ kind: c.kind, rot: c.rot })),
       sources: def.sources.map((x) => ({ ...x })),
       receivers: def.receivers.map((x) => ({ ...x })),
-      solutionWitness: def.solutionWitness.map((c) => (c.type === 'rotate' ? { type: 'rotate', index: c.index } : { type: 'start' })),
+      solutionWitness: def.solutionWitness.map((c) => ({ ...(c as object) }) as { type: string; index?: number }),
       puzzleId: def.puzzleId,
       seed: def.seed,
       mode: def.mode,
+      family: def.family,
       gridW: def.gridW,
       gridH: def.gridH,
     },

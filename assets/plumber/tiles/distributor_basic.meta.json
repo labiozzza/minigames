@@ -1,0 +1,36 @@
+{
+  "asset_id": "distributor_basic",
+  "status": "READY_FOR_INTEGRATION",
+  "is_placeholder": false,
+  "tile_px": 256,
+  "ports": {
+    "top": true,
+    "right": true,
+    "bottom": false,
+    "left": true
+  },
+  "transform": {
+    "sx": 0.2018,
+    "sy": 0.2018,
+    "tx": 1.3,
+    "ty": -33.5
+  },
+  "openings_px": {
+    "top": [
+      128.0,
+      21.1
+    ],
+    "right": [
+      226.6,
+      128.0
+    ],
+    "left": [
+      28.9,
+      128.0
+    ]
+  },
+  "fit_residual_px": 0.0,
+  "source": "finals/distributor_basic_medium_1.png",
+  "origin": "gpt-image-subscription",
+  "quality": "medium"
+}

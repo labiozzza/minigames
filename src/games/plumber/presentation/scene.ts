@@ -1,6 +1,6 @@
 // Plumber Phaser scene: pure presentation of RuntimeState. No game logic here.
 import * as Phaser from 'phaser';
-import { PIPE_CAPACITY, type LevelDefinition } from '../domain/model';
+import { PIPE_CAPACITY, portsOf, type LevelDefinition } from '../domain/model';
 
 export const TILE = 256;
 
@@ -11,6 +11,9 @@ const KIND_TEXTURE: Record<string, string> = {
   cross: 'pipe_cross',
   cap: 'pipe_cap',
   valve: 'valve_basic',
+  filter: 'filter_basic',
+  mixer: 'mixer_basic',
+  distributor: 'distributor_basic',
   source: 'source_basic',
   receiver: 'receiver_basic',
 };
@@ -33,11 +36,14 @@ export class PlumberScene extends Phaser.Scene {
   private ox = 0;
   private oy = 0;
   private sprites: Array<Phaser.GameObjects.Image | null> = [];
+  private shownKinds: string[] = [];
   private gfx: Array<Phaser.GameObjects.Graphics> = [];
   private waterGfx: Array<Phaser.GameObjects.Graphics> = [];
   private fallback = false;
   private refs: SceneRefs = { onTapCell: () => undefined };
   private rots: number[] = [];
+  private kinds: string[] = [];
+  private valves: boolean[] = [];
   private colors: Array<string | null> = [];
   private fractions: number[] = [];
   private leak = -1;
@@ -50,6 +56,10 @@ export class PlumberScene extends Phaser.Scene {
   init(data: { def: LevelDefinition; refs: SceneRefs }): void {
     this.def = data.def;
     this.refs = data.refs;
+    this.kinds = data.def.cells.map((c) => c.kind);
+    this.valves = data.def.cells.map((c) => c.valveOpen !== false);
+    this.rots = data.def.cells.map((c) => c.rot);
+    this.shownKinds = [...this.kinds];
   }
 
   preload(): void {
@@ -87,6 +97,7 @@ export class PlumberScene extends Phaser.Scene {
     this.sprites = [];
     this.gfx = [];
     this.waterGfx = [];
+    this.shownKinds = this.def.cells.map((_, i) => this.kindOf(i));
     const n = this.def.gridW * this.def.gridH;
     for (let i = 0; i < n; i++) {
       const { x, y } = this.cellXY(i);
@@ -96,9 +107,9 @@ export class PlumberScene extends Phaser.Scene {
       bg.lineStyle(1, 0x2a3a55, 1);
       bg.strokeRoundedRect(x, y, this.cell, this.cell, Math.max(4, this.cell * 0.08));
       this.gfx.push(bg);
-      const kind = this.def.cells[i].kind;
+      const kind = this.kindOf(i);
       const frame = KIND_TEXTURE[kind];
-      if (!this.fallback && frame) {
+      if (!this.fallback && frame && this.textures.get('plumber').has(frame)) {
         const img = this.add.image(x + this.cell / 2, y + this.cell / 2, 'plumber', frame);
         img.setDisplaySize(this.cell * 0.96, this.cell * 0.96);
         img.setData('cell', i);
@@ -106,6 +117,7 @@ export class PlumberScene extends Phaser.Scene {
       } else {
         const g = this.add.graphics();
         g.setData('cell', i);
+        this.drawPrimitive(g, i, x, y);
         this.sprites.push(null);
         this.gfx.push(g);
       }
@@ -128,9 +140,11 @@ export class PlumberScene extends Phaser.Scene {
     return gy * this.def.gridW + gx;
   }
 
-  /** Full state sync from model (rots, water per cell, extra fractions for endpoints). */
-  sync(rots: number[], _water: number[], colors: Array<string | null>, fractions: number[], leak: number, hint: number, animate: number | null): void {
+  /** Full state sync from model (rots, kinds, valves, water per cell, extras). */
+  sync(rots: number[], _water: number[], colors: Array<string | null>, fractions: number[], leak: number, hint: number, animate: number | null, kinds?: string[], valves?: boolean[]): void {
     this.rots = [...rots];
+    if (kinds) this.kinds = [...kinds];
+    if (valves) this.valves = [...valves];
     void _water;
     this.colors = [...colors];
     this.fractions = [...fractions];
@@ -141,13 +155,40 @@ export class PlumberScene extends Phaser.Scene {
       const spr = this.sprites[i];
       const target = this.rots[i] * 90;
       if (spr) {
-        if (i === animate) {
+        const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (i === animate && !reduceMotion) {
           this.tweens.killTweensOf(spr);
           this.tweens.add({ targets: spr, angle: spr.angle + 90, duration: 140, ease: 'Sine.easeInOut' });
         } else {
           spr.setAngle(target);
         }
+        const closed = this.kindOf(i) === 'valve' && !(this.valves[i] ?? true);
+        spr.setAlpha(closed ? 0.55 : 1);
       }
+      if (this.shownKinds[i] !== this.kindOf(i)) {
+        this.shownKinds[i] = this.kindOf(i);
+        this.rebuildCell(i);
+      }
+    }
+    this.redrawAll();
+  }
+
+  private rebuildCell(i: number): void {
+    const spr = this.sprites[i];
+    spr?.destroy();
+    this.sprites[i] = null;
+    const { x, y } = this.cellXY(i);
+    const kind = this.kindOf(i);
+    const frame = KIND_TEXTURE[kind];
+    if (!this.fallback && frame && this.textures.get('plumber').has(frame)) {
+      const img = this.add.image(x + this.cell / 2, y + this.cell / 2, 'plumber', frame);
+      img.setDisplaySize(this.cell * 0.96, this.cell * 0.96);
+      img.setAngle((this.rots[i] ?? 0) * 90);
+      this.sprites[i] = img;
+    } else {
+      const g = this.add.graphics();
+      this.drawPrimitive(g, i, x, y);
+      this.gfx.push(g);
     }
     this.redrawAll();
   }
@@ -184,6 +225,48 @@ export class PlumberScene extends Phaser.Scene {
       g.lineStyle(3, 0xf2c230, 1);
       g.strokeRoundedRect(x + 3, y + 3, this.cell - 6, this.cell - 6, 8);
     }
+  }
+
+  private kindOf(i: number): string {
+    return this.kinds[i] ?? this.def.cells[i].kind;
+  }
+
+  /** Primitive fallback tile (no atlas frame): port stubs + kind glyph + TMP badge. */
+  private drawPrimitive(g: Phaser.GameObjects.Graphics, i: number, x: number, y: number): void {
+    const c = this.cell;
+    const cx = x + c / 2;
+    const cy = y + c / 2;
+    const kind = this.kindOf(i);
+    const open = kind !== 'valve' || (this.valves[i] ?? true);
+    g.fillStyle(open ? 0x3e4e61 : 0x2a3442, 1);
+    if (kind === 'mixer') g.fillRect(cx - c * 0.28, cy - c * 0.28, c * 0.56, c * 0.56);
+    else g.fillCircle(cx, cy, c * 0.3);
+    const ports = portsOf({ kind: kind as never, rot: this.rots[i] ?? 0, valveOpen: open }, this.rots[i] ?? 0);
+    g.fillStyle(open ? 0x3e4e61 : 0x2a3442, 1);
+    const stub = c * 0.22;
+    const th = c * 0.2;
+    if (ports.top) g.fillRect(cx - th / 2, y + 2, th, stub);
+    if (ports.bottom) g.fillRect(cx - th / 2, y + c - 2 - stub, th, stub);
+    if (ports.left) g.fillRect(x + 2, cy - th / 2, stub, th);
+    if (ports.right) g.fillRect(x + c - 2 - stub, cy - th / 2, stub, th);
+    if (kind === 'filter') {
+      g.fillStyle(0xf2c230, 1);
+      g.fillRect(cx - th / 2, cy - 2, th, 4);
+    }
+    if (kind === 'mixer') {
+      g.fillStyle(0x9a6ee8, 1);
+      g.fillCircle(cx, cy, c * 0.08);
+    }
+    if (kind === 'distributor') {
+      g.fillStyle(0xf2c230, 1);
+      g.fillCircle(cx, cy, c * 0.07);
+    }
+    if (kind === 'valve' && !open) {
+      g.lineStyle(3, 0xe05a4e, 1);
+      g.lineBetween(cx - c * 0.2, cy - c * 0.2, cx + c * 0.2, cy + c * 0.2);
+    }
+    g.fillStyle(0xca443e, 1);
+    g.fillRect(cx - c * 0.16, y + c - 14, c * 0.32, 10);
   }
 
   /** Primitive fallback tile (no atlas): port stubs + TMP badge, dev-visible. */

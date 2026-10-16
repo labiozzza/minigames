@@ -1,0 +1,40 @@
+{
+  "asset_id": "mixer_basic",
+  "status": "READY_FOR_INTEGRATION",
+  "is_placeholder": false,
+  "tile_px": 256,
+  "ports": {
+    "top": true,
+    "right": true,
+    "bottom": true,
+    "left": true
+  },
+  "transform": {
+    "sx": 0.2095,
+    "sy": 0.2095,
+    "tx": -2.3,
+    "ty": -1.8
+  },
+  "openings_px": {
+    "top": [
+      128.0,
+      33.0
+    ],
+    "right": [
+      228.0,
+      127.9
+    ],
+    "bottom": [
+      128.0,
+      224.0
+    ],
+    "left": [
+      28.7,
+      128.1
+    ]
+  },
+  "fit_residual_px": 0.0,
+  "source": "finals/mixer_basic_medium_1.png",
+  "origin": "gpt-image-subscription",
+  "quality": "medium"
+}

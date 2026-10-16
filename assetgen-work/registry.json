@@ -58,12 +58,31 @@
    "file": "assets/plumber/tiles/receiver_basic.png",
    "source": "assetgen-work/finals/receiver_basic_medium_1.png",
    "tech": "VALID_TECH"
+  },
+  "filter_basic": {
+   "status": "APPROVED",
+   "file": "assets/plumber/tiles/filter_basic.png",
+   "source": "assetgen-work/finals/filter_basic_medium_1.png",
+   "tech": "VALID_TECH"
+  },
+  "mixer_basic": {
+   "status": "APPROVED",
+   "file": "assets/plumber/tiles/mixer_basic.png",
+   "source": "assetgen-work/finals/mixer_basic_medium_1.png",
+   "note": "cartoon style matches source/receiver",
+   "tech": "VALID_TECH"
+  },
+  "distributor_basic": {
+   "status": "APPROVED",
+   "file": "assets/plumber/tiles/distributor_basic.png",
+   "source": "assetgen-work/finals/distributor_basic_medium_1.png",
+   "tech": "VALID_TECH"
   }
  },
  "integration": {
   "atlas": "public/assets/plumber/atlas.png",
   "atlas_json": "public/assets/plumber/atlas.json",
-  "frames": 8,
+  "frames": 11,
   "phaser_screenshots": [
    "evidence/screenshots/plumber-preparing-desktop.png",
    "evidence/screenshots/plumber-running-desktop.png",

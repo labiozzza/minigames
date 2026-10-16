@@ -46,18 +46,24 @@ export function emptyWaterSort(): WaterSortSave {
 export type PlumberPhase = 'PREPARING' | 'RUNNING' | 'PAUSED' | 'WON' | 'FAILED' | 'STOPPED';
 
 export interface PlumberDefSave {
-  cells: Array<{ kind: string; rot: number; valveOpen?: boolean; locked?: boolean }>;
-  sources: Array<{ cell: number; color: string; portions: number }>;
-  receivers: Array<{ cell: number; color: string; goal: number }>;
-  solutionWitness: Array<{ type: string; index?: number }>;
+  cells: Array<{ kind: string; rot: number; valveOpen?: boolean; locked?: boolean; filterAllow?: string[]; recipeIn?: Record<string, number>; recipeOut?: { color: string; count: number }; ratio?: [number, number]; outlet?: string }>;
+  sources: Array<{ cell: number; color: string; portions: number; enabled?: boolean }>;
+  receivers: Array<{ cell: number; color: string; goal: number; kind?: string; outlet?: string; releaseEvery?: number; bufferCap?: number }>;
+  solutionWitness: Array<{ type: string; index?: number; kind?: string; cmd?: { type: string; source?: number; count?: number; state?: boolean; index?: number } }>;
   puzzleId: string;
   seed: number;
   mode: 'child' | 'normal' | 'expert';
+  family?: string;
   gridW: number;
   gridH: number;
+  dynamic?: boolean;
+  programmed?: boolean;
+  program?: Array<{ type: string; source?: number; count?: number; state?: boolean; index?: number }>;
+  inventory?: string[];
 }
 
-const PLUMBER_KINDS = ['empty', 'blocked', 'straight', 'elbow', 't', 'cross', 'cap', 'valve', 'source', 'receiver'];
+const PLUMBER_KINDS = ['empty', 'blocked', 'straight', 'elbow', 't', 'cross', 'cap', 'valve', 'filter', 'mixer', 'distributor', 'source', 'receiver'];
+const PLUMBER_RECEIVERS = ['auto', 'overflow', 'exact', 'buffer'];
 
 function isPlumberDef(d: unknown, gridW: number, gridH: number): d is PlumberDefSave {
   if (!d || typeof d !== 'object') return false;
@@ -75,6 +81,7 @@ function isPlumberDef(d: unknown, gridW: number, gridH: number): d is PlumberDef
   }
   for (const r of o.receivers as Record<string, unknown>[]) {
     if (typeof r.cell !== 'number' || typeof r.color !== 'string' || typeof r.goal !== 'number') return false;
+    if (r.kind !== undefined && !PLUMBER_RECEIVERS.includes(r.kind as string)) return false;
   }
   return typeof o.puzzleId === 'string' && typeof o.seed === 'number';
 }
@@ -87,15 +94,38 @@ export interface PlumberSessionSave {
   gridW: number;
   gridH: number;
   rots: number[];
+  kinds: Array<string | null>;
+  liveConfig: Array<null | { kind: string; filterAllow?: string[]; recipeIn?: Record<string, number>; recipeOut?: { color: string; count: number }; ratio?: [number, number] }>;
   water: number[];
   waterColor: Array<string | null>;
+  valves: boolean[];
+  mixerStock: Array<Array<{ color: string; count: number }>>;
+  distCount: number[];
   sourceLeft: number[];
+  sourceEnabled: boolean[];
   receiverGot: number[];
+  receivedTotal: number[];
+  fedTotal: number;
+  carried: { kind: string } | null;
+  cameFrom: Array<string | null>;
+  inventoryLeft: string[];
+  program: Array<{ type: string; source?: number; count?: number; state?: boolean; index?: number }>;
+  programCounter: number;
   lost: number;
   tick: number;
+  idleTicks: number;
   phase: PlumberPhase;
+  playerRotations: number;
+  hintsUsed: number;
   def: PlumberDefSave;
   updatedAt: number;
+}
+
+export interface PlumberModeStats {
+  attempts: number;
+  wins: number;
+  hints: number;
+  skips: number;
 }
 
 export interface PlumberSave {
@@ -103,12 +133,77 @@ export interface PlumberSave {
   completed: number[];
   active: PlumberSessionSave | null;
   tutorialSeen: boolean;
+  stars: Record<string, number>;
+  collections: string[];
+  stats: Record<'child' | 'normal' | 'expert', PlumberModeStats>;
+  dailies: Record<string, number>;
+  /** level -> {family, mode} recorded at win time (collections/stats). */
+  fams: Record<string, { family: string; mode: string }>;
 }
 
 export type GameSave = WaterSortSave | PlumberSave;
 
+function validStars(v: unknown): Record<string, number> {
+  if (!v || typeof v !== 'object') return {};
+  const out: Record<string, number> = {};
+  for (const [k, n] of Object.entries(v as Record<string, unknown>)) {
+    if (typeof n === 'number' && (n === 1 || n === 2 || n === 3)) out[k] = n;
+  }
+  return out;
+}
+
+function validStats(v: unknown): Record<'child' | 'normal' | 'expert', PlumberModeStats> {
+  const blank = (): PlumberModeStats => ({ attempts: 0, wins: 0, hints: 0, skips: 0 });
+  const out = { child: blank(), normal: blank(), expert: blank() };
+  if (v && typeof v === 'object') {
+    for (const m of ['child', 'normal', 'expert'] as const) {
+      const s = (v as Record<string, unknown>)[m];
+      if (s && typeof s === 'object') {
+        const so = s as Record<string, unknown>;
+        for (const k of ['attempts', 'wins', 'hints', 'skips'] as const) {
+          if (typeof so[k] === 'number' && Number.isFinite(so[k])) out[m][k] = Math.max(0, Math.floor(so[k] as number));
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function validDailies(v: unknown): Record<string, number> {
+  if (!v || typeof v !== 'object') return {};
+  const out: Record<string, number> = {};
+  for (const [k, n] of Object.entries(v as Record<string, unknown>)) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(k) && typeof n === 'number' && (n === 1 || n === 2 || n === 3)) out[k] = n;
+  }
+  return out;
+}
+
+function validFams(v: unknown): Record<string, { family: string; mode: string }> {
+  if (!v || typeof v !== 'object') return {};
+  const out: Record<string, { family: string; mode: string }> = {};
+  for (const [k, e] of Object.entries(v as Record<string, unknown>)) {
+    if (/^\d{1,7}$/.test(k) && e && typeof e === 'object') {
+      const eo = e as Record<string, unknown>;
+      if (typeof eo.family === 'string' && (eo.mode === 'child' || eo.mode === 'normal' || eo.mode === 'expert')) {
+        out[k] = { family: eo.family, mode: eo.mode };
+      }
+    }
+  }
+  return out;
+}
+
 export function emptyPlumber(): PlumberSave {
-  return { maxLevel: 1, completed: [], active: null, tutorialSeen: false };
+  return {
+    maxLevel: 1,
+    completed: [],
+    active: null,
+    tutorialSeen: false,
+    stars: {},
+    collections: [],
+    stats: { child: { attempts: 0, wins: 0, hints: 0, skips: 0 }, normal: { attempts: 0, wins: 0, hints: 0, skips: 0 }, expert: { attempts: 0, wins: 0, hints: 0, skips: 0 } },
+    dailies: {},
+    fams: {},
+  };
 }
 
 /** Narrow a stored game slot to WaterSort (never throws, returns defaults). */
@@ -123,7 +218,17 @@ export function getWaterSortSave(save: SaveData): WaterSortSave {
 /** Narrow a stored game slot to Plumber (never throws, returns defaults). */
 export function getPlumberSave(save: SaveData): PlumberSave {
   const g = save.games['plumber'] as PlumberSave | undefined;
-  if (g && typeof g.maxLevel === 'number' && Array.isArray(g.completed)) return g;
+  if (g && typeof g.maxLevel === 'number' && Array.isArray(g.completed)) {
+    // Backfill fields added after earlier releases (subset-compatible upgrade).
+    if (!g.stars || typeof g.stars !== 'object') g.stars = {};
+    if (!Array.isArray(g.collections)) g.collections = [];
+    if (!g.stats || typeof g.stats !== 'object') {
+      g.stats = { child: { attempts: 0, wins: 0, hints: 0, skips: 0 }, normal: { attempts: 0, wins: 0, hints: 0, skips: 0 }, expert: { attempts: 0, wins: 0, hints: 0, skips: 0 } };
+    }
+    if (!g.dailies || typeof g.dailies !== 'object') g.dailies = {};
+    if (!g.fams || typeof g.fams !== 'object') g.fams = {};
+    return g;
+  }
   const fresh = emptyPlumber();
   save.games['plumber'] = fresh;
   return fresh;
@@ -189,10 +294,21 @@ export function sanitizeSave(raw: unknown): SaveData | null {
       const completed = Array.isArray(po.completed)
         ? [...new Set(po.completed.filter((n): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1))].sort((a, b) => a - b)
         : [];
-      const slot: PlumberSave = { maxLevel, completed, active: null, tutorialSeen: po.tutorialSeen === true };
+      const slot: PlumberSave = {
+        maxLevel,
+        completed,
+        active: null,
+        tutorialSeen: po.tutorialSeen === true,
+        stars: validStars(po.stars),
+        collections: Array.isArray(po.collections) ? po.collections.filter((c): c is string => typeof c === 'string') : [],
+        stats: validStats(po.stats),
+        dailies: validDailies(po.dailies),
+        fams: validFams(po.fams),
+      };
       if (po.active && typeof po.active === 'object') {
         const a = po.active as Record<string, unknown>;
         const numArr = (v: unknown): v is number[] => Array.isArray(v) && v.every((n) => typeof n === 'number');
+        const boolArr = (v: unknown, len: number): v is boolean[] => Array.isArray(v) && v.length === len && v.every((n) => typeof n === 'boolean');
         const phases = ['PREPARING', 'RUNNING', 'PAUSED', 'WON', 'FAILED', 'STOPPED'];
         if (
           typeof a.levelNumber === 'number' && typeof a.puzzleId === 'string' && typeof a.seed === 'number' &&
@@ -203,9 +319,25 @@ export function sanitizeSave(raw: unknown): SaveData | null {
           typeof a.lost === 'number' && typeof a.tick === 'number' && typeof a.phase === 'string' && phases.includes(a.phase)
         ) {
           const cells = a.gridW * a.gridH;
+          const srcs = (a.sourceLeft as number[]).length;
           if (a.rots.length === cells && a.water.length === cells && (a.waterColor as unknown[]).length === cells) {
             if (isPlumberDef(a.def, a.gridW as number, a.gridH as number)) {
-              slot.active = a as unknown as PlumberSessionSave;
+              const full = a as unknown as PlumberSessionSave;
+              // New arrays default safely for pre-upgrade saves (subset compatible).
+              if (!boolArr(full.valves, cells)) full.valves = new Array<boolean>(cells).fill(true);
+              if (!Array.isArray(full.mixerStock)) full.mixerStock = Array.from({ length: cells }, () => []);
+              if (!numArr(full.distCount)) full.distCount = new Array<number>(cells).fill(0);
+              if (!boolArr(full.sourceEnabled, srcs)) full.sourceEnabled = new Array<boolean>(srcs).fill(true);
+              if (!numArr(full.receivedTotal)) full.receivedTotal = [...full.receiverGot];
+              if (typeof full.fedTotal !== 'number') full.fedTotal = 0;
+              if (!Array.isArray(full.inventoryLeft)) full.inventoryLeft = [];
+              if (!Array.isArray(full.program)) full.program = [];
+              if (!Array.isArray(full.cameFrom)) full.cameFrom = [];
+              if (typeof full.programCounter !== 'number') full.programCounter = 0;
+              if (typeof full.idleTicks !== 'number') full.idleTicks = 0;
+              if (typeof full.playerRotations !== 'number') full.playerRotations = 0;
+              if (typeof full.hintsUsed !== 'number') full.hintsUsed = 0;
+              slot.active = full;
             }
           }
         }
@@ -273,6 +405,39 @@ export function parseExport(text: string): SaveData | null {
 
 export type MergeChoice = 'replace' | 'merge' | 'cancel';
 
+/** Plumber extras: stars take max, collections union, stats add, dailies max. */
+function mergePlumberProgress(merged: Record<string, unknown>, incR: Record<string, unknown>): void {
+  const stars: Record<string, number> = { ...((merged.stars as Record<string, number>) ?? {}) };
+  for (const [k, v] of Object.entries((incR.stars as Record<string, unknown>) ?? {})) {
+    if (typeof v === 'number') stars[k] = Math.max(stars[k] ?? 0, v);
+  }
+  merged.stars = stars;
+  merged.collections = [...new Set([...((merged.collections as string[]) ?? []), ...((incR.collections as string[]) ?? [])])];
+  const stats = merged.stats as Record<string, Record<string, number>> | undefined;
+  const incStats = incR.stats as Record<string, Record<string, number>> | undefined;
+  if (stats && incStats) {
+    for (const m of Object.keys(stats)) {
+      if (!incStats[m]) continue;
+      for (const k of ['attempts', 'wins', 'hints', 'skips']) {
+        stats[m][k] = (stats[m][k] ?? 0) + (incStats[m][k] ?? 0);
+      }
+    }
+  }
+  const dailies: Record<string, number> = { ...((merged.dailies as Record<string, number>) ?? {}) };
+  for (const [k, v] of Object.entries((incR.dailies as Record<string, unknown>) ?? {})) {
+    if (typeof v === 'number') dailies[k] = Math.max(dailies[k] ?? 0, v);
+  }
+  merged.dailies = dailies;
+  const fams: Record<string, { family: string; mode: string }> = { ...((merged.fams as Record<string, { family: string; mode: string }>) ?? {}) };
+  for (const [k, v] of Object.entries((incR.fams as Record<string, unknown>) ?? {})) {
+    if (!(k in fams) && v && typeof v === 'object') {
+      const eo = v as Record<string, unknown>;
+      if (typeof eo.family === 'string' && typeof eo.mode === 'string') fams[k] = { family: eo.family, mode: eo.mode };
+    }
+  }
+  merged.fams = fams;
+}
+
 export function mergeSaves(current: SaveData, incoming: SaveData): SaveData {
   const out: SaveData = JSON.parse(JSON.stringify(current)) as SaveData;
   for (const [gameId, inc] of Object.entries(incoming.games)) {
@@ -292,6 +457,7 @@ export function mergeSaves(current: SaveData, incoming: SaveData): SaveData {
         merged[k] = Boolean(cur[k]) || Boolean(incR[k]);
       }
     }
+    if (gameId === 'plumber') mergePlumberProgress(merged, incR);
     out.games[gameId] = merged as unknown as GameSave;
   }
   if (!out.lastPlayed && incoming.lastPlayed) out.lastPlayed = incoming.lastPlayed;

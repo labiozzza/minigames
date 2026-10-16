@@ -23,6 +23,7 @@ function lineLevel(): LevelDefinition {
     puzzleId: 'test-line',
     seed: 1,
     mode: 'normal',
+    family: 'path',
     gridW: 3,
     gridH: 1,
     cells: [

@@ -1,0 +1,32 @@
+{
+  "asset_id": "filter_basic",
+  "status": "READY_FOR_INTEGRATION",
+  "is_placeholder": false,
+  "tile_px": 256,
+  "ports": {
+    "top": true,
+    "right": false,
+    "bottom": true,
+    "left": false
+  },
+  "transform": {
+    "sx": 0.1738,
+    "sy": 0.1738,
+    "tx": 39.2,
+    "ty": -5.5
+  },
+  "openings_px": {
+    "top": [
+      128.0,
+      22.9
+    ],
+    "bottom": [
+      128.0,
+      232.7
+    ]
+  },
+  "fit_residual_px": 0.0,
+  "source": "finals/filter_basic_medium_1.png",
+  "origin": "gpt-image-subscription",
+  "quality": "medium"
+}

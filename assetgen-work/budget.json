@@ -1,7 +1,7 @@
 {
  "low_used": 13,
  "low_limit": 24,
- "medium_used": 8,
+ "medium_used": 11,
  "medium_limit": 16,
  "log": [
   {
@@ -73,6 +73,14 @@
    "rejected_lows": [
     "valve_basic low_1/low_2 glow",
     "receiver_basic low_1/low_2 glow"
+   ]
+  },
+  {
+   "event": "stage3 mediums",
+   "assets": [
+    "filter_basic",
+    "mixer_basic",
+    "distributor_basic"
    ]
   }
  ]

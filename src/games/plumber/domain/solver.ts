@@ -29,8 +29,9 @@ export function verifyWitness(def: LevelDefinition): boolean {
  */
 export function solveSmall(def: LevelDefinition, maxStates = 50000): SolveResult {
   const rotatable: number[] = [];
+  const ROT_KINDS = ['straight', 'elbow', 't', 'cross', 'cap', 'valve', 'filter', 'mixer', 'distributor'];
   def.cells.forEach((c, i) => {
-    if (!c.locked && (c.kind === 'straight' || c.kind === 'elbow' || c.kind === 't' || c.kind === 'cross' || c.kind === 'cap' || c.kind === 'valve')) {
+    if (!c.locked && ROT_KINDS.includes(c.kind)) {
       rotatable.push(i);
     }
   });
