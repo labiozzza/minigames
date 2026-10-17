@@ -1,0 +1,74 @@
+{
+  "rows": [
+    {
+      "tag": "320",
+      "w": 320,
+      "h": 568,
+      "bar": 70,
+      "field": 384,
+      "startX": 106.234375,
+      "startRight": 308,
+      "startW": 201.765625,
+      "vw": 341,
+      "minTarget": 0,
+      "docOverflow": false,
+      "startOnScreen": true
+    },
+    {
+      "tag": "375",
+      "w": 375,
+      "h": 667,
+      "bar": 70,
+      "field": 483,
+      "startX": 161.234375,
+      "startRight": 363,
+      "startW": 201.765625,
+      "vw": 375,
+      "minTarget": 0,
+      "docOverflow": false,
+      "startOnScreen": true
+    },
+    {
+      "tag": "390",
+      "w": 390,
+      "h": 844,
+      "bar": 70,
+      "field": 676,
+      "startX": 176.234375,
+      "startRight": 378,
+      "startW": 201.765625,
+      "vw": 390,
+      "minTarget": 0,
+      "docOverflow": false,
+      "startOnScreen": true
+    },
+    {
+      "tag": "430",
+      "w": 430,
+      "h": 932,
+      "bar": 70,
+      "field": 764,
+      "startX": 216.234375,
+      "startRight": 418,
+      "startW": 201.765625,
+      "vw": 430,
+      "minTarget": 0,
+      "docOverflow": false,
+      "startOnScreen": true
+    },
+    {
+      "tag": "tablet",
+      "w": 768,
+      "h": 1024,
+      "bar": 72,
+      "field": 854,
+      "startX": 560,
+      "startRight": 756,
+      "startW": 196,
+      "vw": 768,
+      "minTarget": 0,
+      "docOverflow": false,
+      "startOnScreen": true
+    }
+  ]
+}

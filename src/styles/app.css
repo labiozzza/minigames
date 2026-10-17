@@ -112,16 +112,33 @@ button { font: inherit; color: inherit; }
 .field { position: absolute; inset: 0; touch-action: none; }
 .field canvas { display: block; }
 .bottombar {
-  min-height: calc(var(--bar-h) + 10px); display: flex; justify-content: space-around;
-  gap: 10px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)) 16px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom)) 12px;
   background: var(--surface); border-top: 1px solid var(--surface-2);
 }
+/* Secondary actions: one compact row that scrolls instead of clipping. */
+.bottom-actions {
+  display: flex; gap: 6px; flex: 1 1 auto; min-width: 0;
+  overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.bottom-actions::-webkit-scrollbar { display: none; }
 .action-btn {
-  flex: 1; max-width: 220px; min-height: 52px; font-size: 24px;
+  flex: 0 0 auto; width: 48px; min-width: 48px; min-height: 48px; font-size: 22px;
   border: none; border-radius: var(--radius); background: var(--surface-2); cursor: pointer;
 }
 .action-btn:disabled { opacity: .35; cursor: default; }
 .action-btn:not(:disabled):active { transform: scale(.96); }
+.start-btn {
+  flex: 0 0 auto; min-width: 96px; min-height: 52px; font-size: 17px;
+  padding-left: 18px; padding-right: 18px; white-space: nowrap;
+}
+@media (min-width: 720px) {
+  .bottombar { justify-content: center; gap: 10px; padding-top: 10px; }
+  .bottom-actions { flex: 1 1 auto; justify-content: center; gap: 10px; overflow: visible; }
+  .action-btn { width: auto; flex: 1 1 0; max-width: 200px; min-height: 52px; }
+  .start-btn { flex: 1 1 0; max-width: 220px; }
+}
 
 /* Buttons, dialogs */
 .btn {

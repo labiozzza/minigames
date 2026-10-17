@@ -153,3 +153,41 @@ test('plumber: works fully offline from precache', async ({ page, context }) => 
   expect(await call0<string>(page, 'phase')).toBe('PREPARING');
   await context.setOffline(false);
 });
+
+test('plumber P4: bottom bar fits narrow phones without clipping the primary action', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.game-card', { hasText: 'Водопроводчик' }).locator('.btn.primary').click();
+  await waitPlumber(page);
+  await waitScene(page);
+  for (const width of [320, 375, 390, 430]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.waitForTimeout(150);
+    const m = await page.evaluate(() => {
+      const start = document.querySelector('.bottombar .btn.primary.big') as HTMLElement;
+      const bar = document.querySelector('.bottombar') as HTMLElement;
+      const sb = start.getBoundingClientRect();
+      const bb = bar.getBoundingClientRect();
+      const targets = [...document.querySelectorAll('.bottombar .action-btn')]
+        .map((b) => b.getBoundingClientRect())
+        .filter((r) => r.height > 0)
+        .map((r) => Math.min(r.width, r.height));
+      return {
+        startRight: sb.right,
+        startLeft: sb.left,
+        barLeft: bb.left,
+        barRight: bb.right,
+        vw: window.innerWidth,
+        minTarget: targets.length ? Math.min(...targets) : 0,
+      };
+    });
+    expect(m.startLeft, `start button left at ${width}px`).toBeGreaterThanOrEqual(-0.5);
+    expect(m.startRight, `start button right at ${width}px`).toBeLessThanOrEqual(m.vw + 0.5);
+    expect(m.barLeft, `bar left at ${width}px`).toBeGreaterThanOrEqual(-0.5);
+    expect(m.barRight, `bar right at ${width}px`).toBeLessThanOrEqual(m.vw + 0.5);
+    expect(m.minTarget, `touch target at ${width}px`).toBeGreaterThanOrEqual(44);
+  }
+  // Secondary actions stay reachable on a narrow screen (auto-scrolls into view).
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.locator('.bottombar .action-btn').nth(4).click();
+  await expect(page.locator('.modal-overlay.levels .level-grid')).toBeVisible();
+});

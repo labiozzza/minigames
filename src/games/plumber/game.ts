@@ -155,6 +155,7 @@ export class PlumberGame implements GameHandle {
     this.fieldEl.id = 'plumber-field';
     fieldWrap.appendChild(this.fieldEl);
     const bottom = el('nav', 'bottombar');
+    const actions = el('div', 'bottom-actions');
     this.undoBtn = button('↩', 'action-btn', () => this.onUndo(), t('game.undo'));
     const redoBtn = button('↪', 'action-btn', () => this.onRedo(), t('plumber.redo'));
     const restartBtn = button('⟳', 'action-btn', () => this.onRestart(), t('game.restart'));
@@ -164,7 +165,11 @@ export class PlumberGame implements GameHandle {
     this.moveBtn = button('✋', 'action-btn', () => this.toggleMoveMode(), t('plumber.moveMode'));
     this.valveBtn = button('🔧', 'action-btn', () => this.toggleValveMode(), t('plumber.valveMode'));
     this.startBtn = button('', 'btn primary big', () => this.onStartPause(), t('plumber.start'));
-    bottom.append(this.undoBtn, redoBtn, restartBtn, hintBtn, levelsBtn, albumBtn, this.moveBtn, this.valveBtn, this.startBtn);
+    this.startBtn.classList.add('start-btn');
+    // §P4: secondary actions live in a scrollable strip so the primary
+    // fix/run/continue button is never clipped on narrow phones.
+    actions.append(this.undoBtn, redoBtn, restartBtn, hintBtn, levelsBtn, albumBtn, this.moveBtn, this.valveBtn);
+    bottom.append(actions, this.startBtn);
     this.bannerEl = el('div', 'plumber-banner');
     this.bannerText = el('div', 'banner-text', '');
     this.bannerActions = el('div', 'banner-actions');
