@@ -103,7 +103,7 @@ button { font: inherit; color: inherit; }
 }
 .icon-btn:hover { background: var(--surface-2); }
 .field-wrap { flex: 1; position: relative; min-height: 0; }
-.field { position: absolute; inset: 0; touch-action: manipulation; }
+.field { position: absolute; inset: 0; touch-action: none; }
 .field canvas { display: block; }
 .bottombar {
   min-height: calc(var(--bar-h) + 10px); display: flex; justify-content: space-around;

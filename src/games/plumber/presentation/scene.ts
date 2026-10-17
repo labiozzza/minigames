@@ -28,7 +28,29 @@ const WATER_COLORS: Record<string, number> = {
 };
 
 export interface SceneRefs {
+  /** Short tap on a cell (rotate / phase-appropriate action). */
   onTapCell: (index: number) => void;
+  /** Long press: "select / carry" this cell according to available operations. */
+  onSelectCell?: (index: number) => void;
+  /** Drag started from this cell (highlight only, no state change yet). */
+  onDragStart?: (index: number) => void;
+  /** Drag-and-drop move from one cell to another (only when moves are allowed). */
+  onMoveCell?: (from: number, to: number) => void;
+  /** Whether the current level allows moving pipes (drag/carry). */
+  canMove?: () => boolean;
+}
+
+interface PointerTrack {
+  id: number;
+  startX: number;
+  startY: number;
+  lastX: number;
+  lastY: number;
+  cell: number;
+  startT: number;
+  moved: boolean;
+  dragging: boolean;
+  longTimer: number;
 }
 
 export class PlumberScene extends Phaser.Scene {
@@ -36,6 +58,12 @@ export class PlumberScene extends Phaser.Scene {
   private cell = 96;
   private ox = 0;
   private oy = 0;
+  private focusGfx!: Phaser.GameObjects.Graphics;
+  private focus = -1;
+  private pointers = new Map<number, PointerTrack>();
+  private pinchStart = 0;
+  private pinchZoom = 1;
+  private cameraBound = false;
   private sprites: Array<Phaser.GameObjects.Image | null> = [];
   private shownKinds: string[] = [];
   private gfx: Array<Phaser.GameObjects.Graphics> = [];
@@ -74,15 +102,217 @@ export class PlumberScene extends Phaser.Scene {
     this.fallback = !this.textures.exists('plumber') || !this.textures.get('plumber').has('pipe_straight');
     this.layout();
     this.buildCells();
+    this.focusGfx = this.add.graphics();
+    this.focusGfx.setDepth(1000);
+    this.installCamera();
     this.scale.on('resize', () => {
       this.layout();
       this.buildCells();
+      this.installCamera();
       this.redrawAll();
+      this.drawFocus();
     });
-    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
-      const idx = this.pick(p.x, p.y);
-      if (idx >= 0) this.refs.onTapCell(idx);
+    this.installGestures();
+  }
+
+  /** Camera: zoom bounds, clamped pan, pointer/wheel zoom. */
+  private installCamera(): void {
+    const cam = this.cameras.main;
+    if (!this.cameraBound) {
+      cam.setZoom(1);
+      this.cameraBound = true;
+    }
+    this.clampCamera();
+  }
+
+  private minZoom(): number { return 1; }
+  private maxZoom(): number { return this.def.gridW * this.def.gridH <= 25 ? 4 : 3; }
+
+  private clampCamera(): void {
+    const cam = this.cameras.main;
+    const z = Phaser.Math.Clamp(cam.zoom, this.minZoom(), this.maxZoom());
+    cam.setZoom(z);
+    // At fit zoom the whole grid is visible: never scroll (keeps tap coords stable).
+    if (z <= 1.001) {
+      cam.setScroll(0, 0);
+      return;
+    }
+    const gw = this.def.gridW * this.cell;
+    const gh = this.def.gridH * this.cell;
+    const viewW = cam.width / z;
+    const viewH = cam.height / z;
+    const minX = this.ox + this.cell / 2 - viewW / 2;
+    const maxX = this.ox + gw - this.cell / 2 - viewW / 2;
+    const minY = this.oy + this.cell / 2 - viewH / 2;
+    const maxY = this.oy + gh - this.cell / 2 - viewH / 2;
+    cam.scrollX = minX <= maxX ? Phaser.Math.Clamp(cam.scrollX, minX, maxX) : this.ox + gw / 2 - viewW / 2;
+    cam.scrollY = minY <= maxY ? Phaser.Math.Clamp(cam.scrollY, minY, maxY) : this.oy + gh / 2 - viewH / 2;
+  }
+
+  private zoomAt(px: number, py: number, factor: number): void {
+    const cam = this.cameras.main;
+    const before = this.pickWorld(px, py);
+    cam.setZoom(Phaser.Math.Clamp(cam.zoom * factor, this.minZoom(), this.maxZoom()));
+    const after = this.pickWorld(px, py);
+    // Keep the point under the pointer/fingers stable.
+    cam.scrollX += (before.x - after.x) / cam.zoom;
+    cam.scrollY += (before.y - after.y) / cam.zoom;
+    this.clampCamera();
+  }
+
+  private pickWorld(px: number, py: number): { x: number; y: number } {
+    const cam = this.cameras.main;
+    return { x: px / cam.zoom + cam.scrollX, y: py / cam.zoom + cam.scrollY };
+  }
+
+  private installGestures(): void {
+    const input = this.input;
+    input.addPointer(3);
+    input.on('pointerdown', (p: Phaser.Input.Pointer) => this.onDown(p));
+    input.on('pointermove', (p: Phaser.Input.Pointer) => this.onMove(p));
+    input.on('pointerup', (p: Phaser.Input.Pointer) => this.onUp(p, true));
+    input.on('gameout', (p: Phaser.Input.Pointer) => this.onUp(p, false));
+    input.on('wheel', (p: Phaser.Input.Pointer, _o: unknown, _dx: number, dy: number) => {
+      this.zoomAt(p.x, p.y, dy > 0 ? 0.9 : 1.1);
     });
+    // Safety net: releases outside the canvas must not leave a stuck drag.
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pointerup', (e) => {
+        const t = this.pointers.get(e.pointerId);
+        if (t) this.endTrack(e.pointerId, null, false);
+      });
+      window.addEventListener('pointercancel', (e) => this.endTrack(e.pointerId, null, false));
+    }
+  }
+
+  private onDown(p: Phaser.Input.Pointer): void {
+    const w = p.worldX !== undefined ? { x: p.worldX, y: p.worldY } : this.pickWorld(p.x, p.y);
+    const cellIdx = this.pickAt(w.x, w.y);
+    if (this.pointers.size >= 1 && !this.pointers.has(p.id)) {
+      // Second finger: switch to pinch, cancel any pending tap/drag.
+      for (const t of this.pointers.values()) this.clearLong(t);
+    }
+    const track: PointerTrack = {
+      id: p.id, startX: p.x, startY: p.y, lastX: p.x, lastY: p.y,
+      cell: cellIdx, startT: this.time.now, moved: false, dragging: false, longTimer: 0,
+    };
+    if (this.pointers.size === 1 && cellIdx >= 0) {
+      track.longTimer = window.setTimeout(() => {
+        if (!track.moved && this.pointers.size === 1 && this.refs.onSelectCell && this.refs.canMove?.()) {
+          this.refs.onSelectCell(cellIdx);
+          track.dragging = true;
+        }
+      }, 380);
+    }
+    this.pointers.set(p.id, track);
+    if (this.pointers.size === 2) {
+      const [a, b] = [...this.pointers.values()];
+      this.pinchStart = Math.hypot(a.lastX - b.lastX, a.lastY - b.lastY);
+      this.pinchZoom = this.cameras.main.zoom;
+    }
+  }
+
+  private onMove(p: Phaser.Input.Pointer): void {
+    const t = this.pointers.get(p.id);
+    if (!t) return;
+    const dx = p.x - t.startX;
+    const dy = p.y - t.startY;
+    const dist = Math.hypot(dx, dy);
+    const slop = 12;
+    t.lastX = p.x;
+    t.lastY = p.y;
+    if (!t.moved && dist > slop) {
+      t.moved = true;
+      this.clearLong(t);
+    }
+    // Zoom > 1: one finger pans (predictable camera control).
+    if (this.pointers.size === 1 && this.cameras.main.zoom > 1.001) {
+      if (t.moved) this.panCamera(t);
+      return;
+    }
+    // Two fingers: pinch zoom + centroid pan.
+    if (this.pointers.size === 2) {
+      const [a, b] = [...this.pointers.values()];
+      const dist2 = Math.hypot(a.lastX - b.lastX, a.lastY - b.lastY);
+      if (this.pinchStart > 0 && dist2 > 0) {
+        const factor = dist2 / this.pinchStart;
+        const cam = this.cameras.main;
+        cam.setZoom(Phaser.Math.Clamp(this.pinchZoom * factor, this.minZoom(), this.maxZoom()));
+        this.clampCamera();
+      }
+      return;
+    }
+    // Single finger drag when moves are allowed → drag-and-drop move.
+    if (t.moved && this.refs.canMove?.() && !t.dragging) {
+      t.dragging = true;
+      this.refs.onDragStart?.(t.cell);
+    }
+  }
+
+  private panCamera(t: PointerTrack): void {
+    const cam = this.cameras.main;
+    cam.scrollX -= (t.lastX - t.startX) / cam.zoom;
+    cam.scrollY -= (t.lastY - t.startY) / cam.zoom;
+    this.clampCamera();
+    t.startX = t.lastX;
+    t.startY = t.lastY;
+  }
+
+  private onUp(p: Phaser.Input.Pointer, inCanvas: boolean): void {
+    const t = this.pointers.get(p.id);
+    if (!t) return;
+    const w = p.worldX !== undefined ? { x: p.worldX, y: p.worldY } : this.pickWorld(p.x, p.y);
+    const target = inCanvas ? this.pickAt(w.x, w.y) : -1;
+    const wasPinch = this.pointers.size >= 2;
+    const quick = this.time.now - t.startT < 380;
+    if (!wasPinch && !t.moved && quick && t.cell >= 0 && target === t.cell) {
+      this.refs.onTapCell(t.cell);
+    } else if (!wasPinch && t.dragging && this.refs.canMove?.() && target >= 0 && target !== t.cell) {
+      this.refs.onMoveCell?.(t.cell, target);
+    }
+    this.endTrack(p.id, null, false);
+  }
+
+  private endTrack(id: number, _unused: unknown, _flag: boolean): void {
+    const t = this.pointers.get(id);
+    if (t) this.clearLong(t);
+    this.pointers.delete(id);
+    if (this.pointers.size < 2) this.pinchStart = 0;
+    if (this.pointers.size === 0) this.clampCamera();
+  }
+
+  private clearLong(t: PointerTrack): void {
+    if (t.longTimer) {
+      window.clearTimeout(t.longTimer);
+      t.longTimer = 0;
+    }
+  }
+
+  private pickAt(wx: number, wy: number): number {
+    const gx = Math.floor((wx - this.ox) / this.cell);
+    const gy = Math.floor((wy - this.oy) / this.cell);
+    if (gx < 0 || gy < 0 || gx >= this.def.gridW || gy >= this.def.gridH) return -1;
+    return gy * this.def.gridW + gx;
+  }
+
+  /** Visible keyboard focus ring (independent of hint/selection). */
+  setFocus(index: number): void {
+    this.focus = index;
+    this.drawFocus();
+  }
+
+  private drawFocus(): void {
+    if (!this.focusGfx) return;
+    this.focusGfx.clear();
+    if (this.focus < 0 || this.focus >= this.def.gridW * this.def.gridH) return;
+    const { x, y } = this.cellXY(this.focus);
+    this.focusGfx.lineStyle(3, 0xffffff, 0.9);
+    this.focusGfx.strokeRoundedRect(x + 2, y + 2, this.cell - 4, this.cell - 4, 8);
+  }
+
+  cameraState(): { zoom: number; scrollX: number; scrollY: number } {
+    const cam = this.cameras.main;
+    return { zoom: cam.zoom, scrollX: cam.scrollX, scrollY: cam.scrollY };
   }
 
   private layout(): void {
@@ -133,13 +363,6 @@ export class PlumberScene extends Phaser.Scene {
     const gx = i % this.def.gridW;
     const gy = Math.floor(i / this.def.gridW);
     return { x: this.ox + gx * this.cell, y: this.oy + gy * this.cell };
-  }
-
-  private pick(px: number, py: number): number {
-    const gx = Math.floor((px - this.ox) / this.cell);
-    const gy = Math.floor((py - this.oy) / this.cell);
-    if (gx < 0 || gy < 0 || gx >= this.def.gridW || gy >= this.def.gridH) return -1;
-    return gy * this.def.gridW + gx;
   }
 
   /** Full state sync from model (rots, kinds, valves, water per cell, extras). */

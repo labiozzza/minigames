@@ -292,7 +292,13 @@ export class PlumberGame implements GameHandle {
     }
     this.game.scene.start('plumber', {
       def: this.def,
-      refs: { onTapCell: (i: number) => this.onTapCell(i) },
+      refs: {
+        onTapCell: (i: number) => this.onTapCell(i),
+        onSelectCell: (i: number) => this.onSelectCell(i),
+        onDragStart: (i: number) => this.onDragStart(i),
+        onMoveCell: (from: number, to: number) => this.onMoveCell(from, to),
+        canMove: () => this.state?.phase === 'PREPARING' && this.hasMovable(),
+      },
     });
     this.scene = this.game.scene.getScene('plumber') as PlumberScene;
     // First sync after scene creation (scene registers on create via event loop).
@@ -369,6 +375,66 @@ export class PlumberGame implements GameHandle {
       void this.persist();
     } else {
       this.undoStack.pop();
+      this.audio.error();
+    }
+    this.refreshChrome();
+  }
+
+  private beginUndo(): void {
+    this.undoStack.push(snapshot(this.state));
+    if (this.undoStack.length > 200) this.undoStack.shift();
+  }
+
+  /** Long press: carry the pipe under the finger, or place the carried one. */
+  private onSelectCell(i: number): void {
+    if (this.state.phase !== 'PREPARING' || !this.hasMovable()) return;
+    this.cursor = i;
+    this.beginUndo();
+    let ok = false;
+    if (this.state.carried) ok = applyCommand(this.state, { type: 'place', index: i });
+    else ok = applyCommand(this.state, { type: 'pickup', index: i });
+    if (ok) {
+      this.moveMode = true;
+      this.redoStack = [];
+      this.audio.select();
+      this.hintCell = -1;
+      this.syncScene(null);
+      void this.persist();
+    } else {
+      this.undoStack.pop();
+      this.audio.error();
+    }
+    this.refreshChrome();
+  }
+
+  private onDragStart(i: number): void {
+    if (this.state.phase !== 'PREPARING') return;
+    this.cursor = i;
+    this.scene?.setFocus(i);
+  }
+
+  /** Drag-and-drop: move a pipe from `from` to `to` in a single undo step. */
+  private onMoveCell(from: number, to: number): void {
+    if (this.state.phase !== 'PREPARING' || from === to) return;
+    this.cursor = to;
+    this.beginUndo();
+    let ok = false;
+    if (this.state.carried) {
+      ok = applyCommand(this.state, { type: 'place', index: to });
+    } else {
+      ok = applyCommand(this.state, { type: 'pickup', index: from });
+      if (ok) ok = applyCommand(this.state, { type: 'place', index: to });
+    }
+    if (ok) {
+      this.moveMode = true;
+      this.redoStack = [];
+      this.audio.select();
+      this.hintCell = -1;
+      this.syncScene(null);
+      void this.persist();
+    } else {
+      const prev = this.undoStack.pop();
+      if (prev) restore(this.state, prev);
       this.audio.error();
     }
     this.refreshChrome();
@@ -792,6 +858,7 @@ export class PlumberGame implements GameHandle {
     if (!this.scene) return;
     const kinds = this.state.rots.map((_, i) => kindAt(this.state, i));
     this.scene.sync(this.state.rots, this.state.water, this.state.waterColor, this.fractions(), this.state.phase === 'FAILED' ? (this.state.errorCell ?? this.state.leakCell ?? -1) : -1, this.hintCell, animate, kinds, this.state.valves, this.state.cameFrom);
+    this.scene.setFocus(this.cursor);
   }
 
   private refreshChrome(): void {
@@ -830,11 +897,37 @@ export class PlumberGame implements GameHandle {
   }
 
   private handleKey(e: KeyboardEvent): void {
-    if (e.key === ' ') {
-      e.preventDefault();
-      this.onStartPause();
-    } else if (e.key === 'Enter') {
-      this.onTapCell(this.cursor);
+    const target = e.target as HTMLElement | null;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+    if (!this.def || !this.state) return;
+    const w = this.def.gridW;
+    const h = this.def.gridH;
+    const moveCursor = (dx: number, dy: number): void => {
+      const cx = this.cursor % w;
+      const cy = Math.floor(this.cursor / w);
+      const nx = Math.min(w - 1, Math.max(0, cx + dx));
+      const ny = Math.min(h - 1, Math.max(0, cy + dy));
+      this.cursor = ny * w + nx;
+      this.scene?.setFocus(this.cursor);
+    };
+    switch (e.key) {
+      case ' ':
+        e.preventDefault();
+        this.onStartPause();
+        break;
+      case 'Enter':
+        this.onTapCell(this.cursor);
+        break;
+      case 'ArrowLeft': moveCursor(-1, 0); break;
+      case 'ArrowRight': moveCursor(1, 0); break;
+      case 'ArrowUp': moveCursor(0, -1); break;
+      case 'ArrowDown': moveCursor(0, 1); break;
+      case 'v': case 'V': this.toggleValveMode(); break;
+      case 'z': case 'Z': if (e.shiftKey) this.onRedo(); else this.onUndo(); break;
+      case 'y': case 'Y': this.onRedo(); break;
+      case 'h': case 'H': this.onHint(); break;
+      case 'n': case 'N': if (this.state.phase === 'WON') this.nextLevel(); break;
+      default: break;
     }
   }
 
@@ -939,6 +1032,12 @@ export class PlumberGame implements GameHandle {
       },
       cellCenter: (i: number) => this.scene?.cellCenter(i) ?? null,
       sceneReady: () => this.scene !== null,
+      camera: () => this.scene?.cameraState() ?? null,
+      grid: () => this.scene?.gridDims() ?? null,
+      focus: () => this.cursor,
+      rotations: () => this.state.playerRotations,
+      kindAt: (i: number) => kindAt(this.state, i),
+      carried: () => (this.state.carried ? this.state.carried.kind : null),
       rotatable: () => this.def.cells.map((c, i) => ({ c, i })).filter(({ c, i }) => ['straight', 'elbow', 't', 'cross', 'cap', 'valve', 'filter', 'mixer', 'distributor'].includes(kindAt(this.state, i)) && !c.locked).map(({ i }) => i),
       usesFallback: () => this.scene?.usesFallback() ?? null,
       receiverGot: () => [...this.state.receiverGot],

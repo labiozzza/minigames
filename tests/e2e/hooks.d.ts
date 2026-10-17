@@ -13,6 +13,13 @@ declare global {
       solve(): void;
       rotatable(): number[];
       rotate(i: number): void;
+      camera(): { zoom: number; scrollX: number; scrollY: number };
+      grid(): { w: number; h: number; cell: number; ox: number; oy: number };
+      focus(): number;
+      rotations(): number;
+      kindAt(i: number): string;
+      carried(): string | null;
+      cellCenter(i: number): { x: number; y: number } | null;
     };
     __MG_TEST__: {
       save(): {
