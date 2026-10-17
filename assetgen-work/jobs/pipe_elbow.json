@@ -32,12 +32,20 @@
     },
     "prompt": "Original stylized polished 2.5D transparent glass elbow pipe tile, channels exiting exactly at top and right midpoints, single asset on truly transparent canvas, no text."
   },
-  "status": "WAITING_FOR_PROVIDER",
+  "status": "APPROVED",
   "attempts": 0,
   "max_attempts": 3,
   "placeholder": "assetgen-work/placeholders/pipe_elbow.png",
   "created_at": "2026-10-16T15:34:56.531892+00:00",
-  "history": [],
-  "approved": false,
-  "blocker": "Require OPENAI_API_KEY and explicit --allow-paid for API charges"
+  "history": [
+    {
+      "timestamp": "2026-10-17T09:36:08.500664+00:00",
+      "event": "reconcile",
+      "from": "waiting_for_provider",
+      "to": "approved",
+      "reason": null
+    }
+  ],
+  "approved": true,
+  "state": "approved"
 }

@@ -362,6 +362,253 @@ def process(workspace, job, allow_paid=False, model=None):
     return r
 
 
+# ---------- §17 canonical reconcile ----------
+
+# TZ v1.2 states. `status` (legacy UPPER) is kept for compatibility; `state`
+# (lowercase) is the canonical value owned by registry.json.
+STATE_TO_STATUS = {
+    "requested": "REQUESTED",
+    "generating": "GENERATING",
+    "validating": "VALIDATING",
+    "approved": "APPROVED",
+    "rejected": "REJECTED",
+    "retry": "RETRY",
+    "waiting_for_limits": "WAITING_FOR_LIMITS",
+    "waiting_for_provider": "WAITING_FOR_PROVIDER",
+    "manual_review_required": "MANUAL_REVIEW_REQUIRED",
+    "placeholder": "PLACEHOLDER",
+}
+LEGACY_STATE = {
+    "approved": "approved",
+    "placeholder": "placeholder",
+    "ready_for_integration": "approved",
+    "valid_tech": "validating",
+    "rejected": "rejected",
+    "rejected_tech": "rejected",
+    "waiting_for_provider": "waiting_for_provider",
+    "waiting_for_limits": "waiting_for_limits",
+    "manual_review_required": "manual_review_required",
+}
+
+
+def _canonical_state(value):
+    return LEGACY_STATE.get(str(value or "").lower(), "requested")
+
+
+def _prompt_hash(request):
+    prompt = (request or {}).get("prompt")
+    return hashlib.sha256(prompt.encode("utf-8")).hexdigest() if isinstance(prompt, str) else None
+
+
+def _rotate_mask(mask):
+    # Rotating a tile 90deg clockwise: top<-left, right<-top, bottom<-right, left<-bottom.
+    return {
+        "top": bool(mask.get("left")),
+        "right": bool(mask.get("top")),
+        "bottom": bool(mask.get("right")),
+        "left": bool(mask.get("bottom")),
+    }
+
+
+def reconcile(workspace="assetgen-work", assets_root="assets/plumber", padding=12):
+    """Single canonical reconciliation.
+
+    registry.json owns asset states; budget.json owns the budget ledger. Legacy
+    job files and the registry budget snapshot are migrated to those sources,
+    APPROVED files are re-validated (missing/opaque => downgraded + placeholder),
+    and per-PNG provenance is (re)computed. Idempotent: a second run changes
+    nothing and preserves previously approved tiles.
+    """
+    ws = Path(workspace)
+    reg_path = ws / "registry.json"
+    budget_path = ws / "budget.json"
+    jobs_dir = ws / "jobs"
+    registry = read(reg_path) if reg_path.exists() else {"style_id": None, "provider": "unknown", "assets": {}}
+    registry.setdefault("assets", {})
+    registry.setdefault("provider", "unknown")
+    budget = read(budget_path) if budget_path.exists() else {}
+    jobs = {read(f)["id"]: read(f) for f in sorted(jobs_dir.glob("*.json"))} if jobs_dir.exists() else {}
+
+    # Integration geometry (tiles.json) is the authoritative port map; job
+    # requests are migrated to agree with it (the divergence TZ v1.2 §17 flags).
+    geo = {}
+    tiles_json = Path(assets_root) / "tiles.json"
+    if tiles_json.exists():
+        for gid, g in (read(tiles_json).get("tiles") or {}).items():
+            if g.get("ports"):
+                geo[gid] = g["ports"]
+    # Only these flags mean the file itself is unusable; edge-bleed/padding flags
+    # are recorded as warnings because seamless tiles intentionally reach edges.
+    CRITICAL = {"NOT_PNG", "NO_RGBA_ALPHA", "EMPTY_SPRITE", "OPAQUE_BACKGROUND"}
+
+    # Canonical budget counts come from the ledger; job/registry snapshots follow it.
+    canon_budget = {
+        "low_used": int(budget.get("low_used", 0)),
+        "low_limit": int(budget.get("low_limit", 0)),
+        "medium_used": int(budget.get("medium_used", 0)),
+        "medium_limit": int(budget.get("medium_limit", 0)),
+    }
+
+    changed = 0
+    report = {"approved": 0, "rejected": [], "placeholders": [], "pending": [], "changed": 0}
+    provenance = {}
+    approved_ids = []
+
+    for aid in sorted(registry["assets"].keys()):
+        entry = registry["assets"][aid]
+        job = jobs.get(aid)
+        request = (job or {}).get("request") or {}
+        state = _canonical_state(entry.get("status", entry.get("state")))
+        fpath = Path(entry.get("file") or (assets_root / "tiles" / f"{aid}.png"))
+        tech = None
+
+        ports = geo.get(aid) or request.get("port_mask") or {}
+
+        if state == "approved":
+            if not fpath.exists():
+                state = "placeholder"
+                entry["reason"] = "approved file missing on disk"
+            else:
+                tech = transparent_check(fpath, padding, ports=ports)
+                critical = [f for f in tech["flags"] if f in CRITICAL]
+                if critical:
+                    state = "rejected"
+                    entry["reason"] = ",".join(critical)
+                    entry["retryable"] = True
+                else:
+                    entry.pop("reason", None)
+                    entry["warnings"] = [f for f in tech["flags"] if f not in CRITICAL]
+                    if request and ports and request.get("port_mask") != ports:
+                        request["port_mask"] = ports
+                        entry["ports_migrated"] = True
+                    approved_ids.append(aid)
+
+        if state == "approved":
+            report["approved"] += 1
+            alpha = Image.open(fpath).convert("RGBA").getchannel("A")
+            has_transparency = alpha.getextrema()[0] < 255
+            mask = ports
+            rotations = [mask]
+            for _ in range(3):
+                rotations.append(_rotate_mask(rotations[-1]))
+            provenance[aid] = {
+                "state": "approved",
+                "provider": registry.get("provider"),
+                "origin": (job or {}).get("origin") or "gpt-image-subscription",
+                "source_file": entry.get("source"),
+                "file": str(fpath),
+                "sha256": tech["sha256"],
+                "dimensions": tech["dimensions"],
+                "has_transparency": has_transparency,
+                "bbox": tech["bbox"],
+                "style_id": (job or {}).get("request", {}).get("style_id") or registry.get("style_id"),
+                "prompt_hash": _prompt_hash(request),
+                "version": (job or {}).get("version", 1),
+                "license": "provider-generated (OpenAI image); project-owned usage",
+                "ports": mask,
+                "ports_after_rotation": rotations,
+                "previews": entry.get("previews"),
+                "phaser_snapshot": (registry.get("integration") or {}).get("phaser_screenshots", [None])[0],
+                "tech": tech["status"],
+            }
+        elif state == "placeholder":
+            ph = ws / "placeholders" / f"{aid}.png"
+            if not ph.exists():
+                kind = request.get("kind") or ("pipe-straight" if "pipe" in aid else aid.replace("_", "-"))
+                if kind not in KINDS:
+                    kind = "pipe-straight"
+                make_placeholder(kind, request.get("logical_cell_px", 256), ph)
+            entry.setdefault("placeholder", str(ph))
+            report["placeholders"].append(aid)
+        elif state in ("waiting_for_provider", "waiting_for_limits"):
+            report["pending"].append(aid)
+            ph = ws / "placeholders" / f"{aid}.png"
+            if not ph.exists():
+                kind = request.get("kind") or "pipe-straight"
+                if kind not in KINDS:
+                    kind = "pipe-straight"
+                make_placeholder(kind, request.get("logical_cell_px", 256), ph)
+            entry.setdefault("placeholder", str(ph))
+        if state == "rejected":
+            report["rejected"].append({"id": aid, "reason": entry.get("reason")})
+            ph = ws / "placeholders" / f"{aid}.png"
+            if not ph.exists():
+                make_placeholder("pipe-straight", request.get("logical_cell_px", 256), ph)
+            entry.setdefault("placeholder", str(ph))
+
+        entry["state"] = state
+        entry["status"] = STATE_TO_STATUS[state]
+        if job is not None:
+            prev_state = _canonical_state(job.get("status"))
+            job["state"] = state
+            job["status"] = STATE_TO_STATUS[state]
+            job["approved"] = state == "approved"
+            if prev_state != state:
+                job.setdefault("history", []).append({"timestamp": stamp(), "event": "reconcile", "from": prev_state, "to": state, "reason": entry.get("reason")})
+                changed += 1
+            if state == "approved" and job.get("blocker"):
+                job.pop("blocker", None)
+
+    # Budget snapshot adopts the canonical ledger.
+    if registry.get("budget") != canon_budget:
+        changed += 1
+    registry["budget"] = canon_budget
+    registry.setdefault("provenance", {})
+    registry["provenance"].update(provenance)
+    registry["generated_at"] = stamp()
+    registry["states"] = sorted(STATE_TO_STATUS.keys())
+
+    # Atlas metadata must match the approved files actually shipped.
+    integration = registry.get("integration") or {}
+    atlas_json = integration.get("atlas_json")
+    atlas_mismatch = []
+    if atlas_json and Path(atlas_json).exists():
+        frames = set((read(Path(atlas_json)).get("frames") or {}).keys())
+        for aid in approved_ids:
+            if Path(integration.get("atlas", "")).exists() and aid not in frames and aid.replace("_basic", "") not in frames:
+                atlas_mismatch.append(aid)
+        integration["frame_mismatch"] = atlas_mismatch
+    registry["integration"] = integration
+
+    # Every registry asset gets a queue job file so status/queue never diverge.
+    for aid in sorted(registry["assets"].keys()):
+        if aid in jobs:
+            continue
+        entry = registry["assets"][aid]
+        request = {
+            "game_id": "plumber",
+            "asset_id": aid,
+            "style_id": registry.get("style_id"),
+            "kind": aid.replace("_", "-"),
+            "logical_cell_px": 256,
+            "port_mask": geo.get(aid, {}),
+            "prompt": None,
+        }
+        job = {
+            "id": aid,
+            "request": request,
+            "status": entry.get("status"),
+            "state": entry.get("state"),
+            "attempts": 1,
+            "max_attempts": 3,
+            "placeholder": entry.get("placeholder"),
+            "created_at": stamp(),
+            "history": [{"timestamp": stamp(), "event": "reconcile", "to": entry.get("state"), "reason": "synthesised from registry"}],
+            "approved": entry.get("state") == "approved",
+            "origin": "gpt-image-subscription",
+            "source": entry.get("source"),
+        }
+        jobs[aid] = job
+        changed += 1
+
+    report["changed"] = changed
+    report["budget"] = canon_budget
+    dump(reg_path, registry)
+    for aid, job in jobs.items():
+        dump(jobs_dir / f"{aid}.json", job)
+    return report
+
+
 def main():
     pa=argparse.ArgumentParser(description=__doc__)
     sub=pa.add_subparsers(dest='cmd',required=True)
@@ -373,6 +620,7 @@ def main():
     su=sub.add_parser('submit');su.add_argument('--request',required=True);su.add_argument('--workspace',default='assetgen-work')
     pr=sub.add_parser('process');pr.add_argument('--asset',required=True);pr.add_argument('--workspace',default='assetgen-work');pr.add_argument('--allow-paid',action='store_true');pr.add_argument('--model')
     st=sub.add_parser('status');st.add_argument('--workspace',default='assetgen-work');st.add_argument('--asset')
+    rc=sub.add_parser('reconcile');rc.add_argument('--workspace',default='assetgen-work');rc.add_argument('--assets-root',default='assets/plumber')
     a=pa.parse_args()
     if a.cmd=='validate':
         result=transparent_check(Path(a.file),a.padding,ports=read(Path(a.ports_json)).get('port_mask',{}) if a.ports_json else None,preview=a.preview_dir)
@@ -388,6 +636,8 @@ def main():
         result=submit(a.workspace,a.request)
     elif a.cmd=='process':
         result=process(a.workspace,a.asset,a.allow_paid,a.model)
+    elif a.cmd=='reconcile':
+        result=reconcile(a.workspace,a.assets_root)
     else:
         folder=Path(a.workspace)/'jobs'
         jobs=[read(f) for f in sorted(folder.glob('*.json'))] if folder.exists() else []

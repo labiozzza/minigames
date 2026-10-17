@@ -1,102 +1,776 @@
 {
- "style_id": "plumber_2_5d_v1",
- "provider": "chatgpt-subscription (tools/gpt_imagegen_chatgpt.mjs)",
- "budget": {
-  "low_used": 13,
-  "low_limit": 24,
-  "medium_used": 8,
-  "medium_limit": 16
- },
- "assets": {
-  "pipe_straight": {
-   "status": "APPROVED",
-   "file": "assets/plumber/tiles/pipe_straight.png",
-   "source": "assetgen-work/finals/pipe_straight_medium_1.png",
-   "tech": "VALID_TECH"
+  "style_id": "plumber_2_5d_v1",
+  "provider": "chatgpt-subscription (tools/gpt_imagegen_chatgpt.mjs)",
+  "budget": {
+    "low_used": 13,
+    "low_limit": 24,
+    "medium_used": 11,
+    "medium_limit": 16
   },
-  "pipe_elbow": {
-   "status": "APPROVED",
-   "file": "assets/plumber/tiles/pipe_elbow.png",
-   "source": "assetgen-work/finals/pipe_elbow_medium_1.png",
-   "tech": "VALID_TECH"
+  "assets": {
+    "pipe_straight": {
+      "status": "APPROVED",
+      "file": "assets/plumber/tiles/pipe_straight.png",
+      "source": "assetgen-work/finals/pipe_straight_medium_1.png",
+      "tech": "VALID_TECH",
+      "warnings": [],
+      "state": "approved"
+    },
+    "pipe_elbow": {
+      "status": "APPROVED",
+      "file": "assets/plumber/tiles/pipe_elbow.png",
+      "source": "assetgen-work/finals/pipe_elbow_medium_1.png",
+      "tech": "VALID_TECH",
+      "warnings": [],
+      "state": "approved"
+    },
+    "pipe_t": {
+      "status": "APPROVED",
+      "file": "assets/plumber/tiles/pipe_t.png",
+      "source": "assetgen-work/finals/pipe_t_medium_1.png",
+      "note": "faint blue halo invisible at tile scale, verified dark+light",
+      "tech": "VALID_TECH",
+      "warnings": [],
+      "state": "approved"
+    },
+    "pipe_cross": {
+      "status": "APPROVED",
+      "file": "assets/plumber/tiles/pipe_cross.png",
+      "source": "assetgen-work/finals/pipe_cross_medium_1.png",
+      "tech": "VALID_TECH",
+      "warnings": [],
+      "state": "approved"
+    },
+    "pipe_cap": {
+      "status": "APPROVED",
+      "file": "assets/plumber/tiles/pipe_cap.png",
+      "source": "assetgen-work/candidates/pipe_cap_low_1.png",
+      "note": "low selected over medium (medium looked like a vase)",
+      "tech": "VALID_TECH",
+      "warnings": [
+        "CROPPED_OR_UNSAFE_BOTTOM"
+      ],
+      "state": "approved"
+    },
+    "valve_basic": {
+      "status": "APPROVED",
+      "file": "assets/plumber/tiles/valve_basic.png",
+      "source": "assetgen-work/finals/valve_basic_medium_1.png",
+      "note": "faint warm halo invisible at tile scale, verified dark+light",
+      "tech": "VALID_TECH",
+      "warnings": [],
+      "state": "approved"
+    },
+    "source_basic": {
+      "status": "APPROVED",
+      "file": "assets/plumber/tiles/source_basic.png",
+      "source": "assetgen-work/finals/source_basic_medium_1.png",
+      "tech": "VALID_TECH",
+      "warnings": [
+        "CROPPED_OR_UNSAFE_TOP"
+      ],
+      "state": "approved"
+    },
+    "receiver_basic": {
+      "status": "APPROVED",
+      "file": "assets/plumber/tiles/receiver_basic.png",
+      "source": "assetgen-work/finals/receiver_basic_medium_1.png",
+      "tech": "VALID_TECH",
+      "warnings": [
+        "CROPPED_OR_UNSAFE_RIGHT"
+      ],
+      "state": "approved"
+    },
+    "filter_basic": {
+      "status": "APPROVED",
+      "file": "assets/plumber/tiles/filter_basic.png",
+      "source": "assetgen-work/finals/filter_basic_medium_1.png",
+      "tech": "VALID_TECH",
+      "warnings": [
+        "CROPPED_OR_UNSAFE_TOP",
+        "CROPPED_OR_UNSAFE_BOTTOM"
+      ],
+      "state": "approved"
+    },
+    "mixer_basic": {
+      "status": "APPROVED",
+      "file": "assets/plumber/tiles/mixer_basic.png",
+      "source": "assetgen-work/finals/mixer_basic_medium_1.png",
+      "note": "cartoon style matches source/receiver",
+      "tech": "VALID_TECH",
+      "warnings": [
+        "CROPPED_OR_UNSAFE_LEFT",
+        "CROPPED_OR_UNSAFE_RIGHT",
+        "CROPPED_OR_UNSAFE_BOTTOM"
+      ],
+      "state": "approved"
+    },
+    "distributor_basic": {
+      "status": "APPROVED",
+      "file": "assets/plumber/tiles/distributor_basic.png",
+      "source": "assetgen-work/finals/distributor_basic_medium_1.png",
+      "tech": "VALID_TECH",
+      "warnings": [
+        "CROPPED_OR_UNSAFE_LEFT",
+        "CROPPED_OR_UNSAFE_TOP",
+        "CROPPED_OR_UNSAFE_RIGHT"
+      ],
+      "state": "approved"
+    }
   },
-  "pipe_t": {
-   "status": "APPROVED",
-   "file": "assets/plumber/tiles/pipe_t.png",
-   "source": "assetgen-work/finals/pipe_t_medium_1.png",
-   "note": "faint blue halo invisible at tile scale, verified dark+light",
-   "tech": "VALID_TECH"
+  "integration": {
+    "atlas": "public/assets/plumber/atlas.png",
+    "atlas_json": "public/assets/plumber/atlas.json",
+    "frames": 11,
+    "phaser_screenshots": [
+      "evidence/screenshots/plumber-preparing-desktop.png",
+      "evidence/screenshots/plumber-running-desktop.png",
+      "evidence/screenshots/plumber-win-desktop.png",
+      "evidence/screenshots/plumber-joints-3x3.png"
+    ],
+    "usesFallback_e2e": false,
+    "frame_mismatch": []
   },
-  "pipe_cross": {
-   "status": "APPROVED",
-   "file": "assets/plumber/tiles/pipe_cross.png",
-   "source": "assetgen-work/finals/pipe_cross_medium_1.png",
-   "tech": "VALID_TECH"
-  },
-  "pipe_cap": {
-   "status": "APPROVED",
-   "file": "assets/plumber/tiles/pipe_cap.png",
-   "source": "assetgen-work/candidates/pipe_cap_low_1.png",
-   "note": "low selected over medium (medium looked like a vase)",
-   "tech": "VALID_TECH"
-  },
-  "valve_basic": {
-   "status": "APPROVED",
-   "file": "assets/plumber/tiles/valve_basic.png",
-   "source": "assetgen-work/finals/valve_basic_medium_1.png",
-   "note": "faint warm halo invisible at tile scale, verified dark+light",
-   "tech": "VALID_TECH"
-  },
-  "source_basic": {
-   "status": "APPROVED",
-   "file": "assets/plumber/tiles/source_basic.png",
-   "source": "assetgen-work/finals/source_basic_medium_1.png",
-   "tech": "VALID_TECH"
-  },
-  "receiver_basic": {
-   "status": "APPROVED",
-   "file": "assets/plumber/tiles/receiver_basic.png",
-   "source": "assetgen-work/finals/receiver_basic_medium_1.png",
-   "tech": "VALID_TECH"
-  },
-  "filter_basic": {
-   "status": "APPROVED",
-   "file": "assets/plumber/tiles/filter_basic.png",
-   "source": "assetgen-work/finals/filter_basic_medium_1.png",
-   "tech": "VALID_TECH"
-  },
-  "mixer_basic": {
-   "status": "APPROVED",
-   "file": "assets/plumber/tiles/mixer_basic.png",
-   "source": "assetgen-work/finals/mixer_basic_medium_1.png",
-   "note": "cartoon style matches source/receiver",
-   "tech": "VALID_TECH"
-  },
-  "distributor_basic": {
-   "status": "APPROVED",
-   "file": "assets/plumber/tiles/distributor_basic.png",
-   "source": "assetgen-work/finals/distributor_basic_medium_1.png",
-   "tech": "VALID_TECH"
-  }
- },
- "integration": {
-  "atlas": "public/assets/plumber/atlas.png",
-  "atlas_json": "public/assets/plumber/atlas.json",
-  "frames": 11,
-  "phaser_screenshots": [
-   "evidence/screenshots/plumber-preparing-desktop.png",
-   "evidence/screenshots/plumber-running-desktop.png",
-   "evidence/screenshots/plumber-win-desktop.png",
-   "evidence/screenshots/plumber-joints-3x3.png"
+  "queue_remaining": [
+    "mixer_basic",
+    "splitter_basic",
+    "switch_basic",
+    "fixed_pipe_variant",
+    "collections x12-16",
+    "decor"
   ],
-  "usesFallback_e2e": false
- },
- "queue_remaining": [
-  "mixer_basic",
-  "splitter_basic",
-  "switch_basic",
-  "fixed_pipe_variant",
-  "collections x12-16",
-  "decor"
- ]
+  "provenance": {
+    "distributor_basic": {
+      "state": "approved",
+      "provider": "chatgpt-subscription (tools/gpt_imagegen_chatgpt.mjs)",
+      "origin": "gpt-image-subscription",
+      "source_file": "assetgen-work/finals/distributor_basic_medium_1.png",
+      "file": "assets/plumber/tiles/distributor_basic.png",
+      "sha256": "9c1b0c28a91054e86a7131ff606af1c89a67f2220d8677d2353c12ce78cfd4d9",
+      "dimensions": {
+        "width": 256,
+        "height": 256,
+        "mode": "RGBA"
+      },
+      "has_transparency": true,
+      "bbox": [
+        5,
+        4,
+        250,
+        170
+      ],
+      "style_id": "plumber_2_5d_v1",
+      "prompt_hash": null,
+      "version": 1,
+      "license": "provider-generated (OpenAI image); project-owned usage",
+      "ports": {},
+      "ports_after_rotation": [
+        {},
+        {
+          "top": false,
+          "right": false,
+          "bottom": false,
+          "left": false
+        },
+        {
+          "top": false,
+          "right": false,
+          "bottom": false,
+          "left": false
+        },
+        {
+          "top": false,
+          "right": false,
+          "bottom": false,
+          "left": false
+        }
+      ],
+      "previews": null,
+      "phaser_snapshot": "evidence/screenshots/plumber-preparing-desktop.png",
+      "tech": "REJECTED_TECH"
+    },
+    "filter_basic": {
+      "state": "approved",
+      "provider": "chatgpt-subscription (tools/gpt_imagegen_chatgpt.mjs)",
+      "origin": "gpt-image-subscription",
+      "source_file": "assetgen-work/finals/filter_basic_medium_1.png",
+      "file": "assets/plumber/tiles/filter_basic.png",
+      "sha256": "bcd7633eac7f6283b13e50ae4db820ceca9f8f17f77e08c9c955d1d355e136b8",
+      "dimensions": {
+        "width": 256,
+        "height": 256,
+        "mode": "RGBA"
+      },
+      "has_transparency": true,
+      "bbox": [
+        98,
+        0,
+        158,
+        256
+      ],
+      "style_id": "plumber_2_5d_v1",
+      "prompt_hash": null,
+      "version": 1,
+      "license": "provider-generated (OpenAI image); project-owned usage",
+      "ports": {},
+      "ports_after_rotation": [
+        {},
+        {
+          "top": false,
+          "right": false,
+          "bottom": false,
+          "left": false
+        },
+        {
+          "top": false,
+          "right": false,
+          "bottom": false,
+          "left": false
+        },
+        {
+          "top": false,
+          "right": false,
+          "bottom": false,
+          "left": false
+        }
+      ],
+      "previews": null,
+      "phaser_snapshot": "evidence/screenshots/plumber-preparing-desktop.png",
+      "tech": "REJECTED_TECH"
+    },
+    "mixer_basic": {
+      "state": "approved",
+      "provider": "chatgpt-subscription (tools/gpt_imagegen_chatgpt.mjs)",
+      "origin": "gpt-image-subscription",
+      "source_file": "assetgen-work/finals/mixer_basic_medium_1.png",
+      "file": "assets/plumber/tiles/mixer_basic.png",
+      "sha256": "d7b1923de32a3c27adbb23e47eb29d3ae93166ad1b108aa786be2305f02699ea",
+      "dimensions": {
+        "width": 256,
+        "height": 256,
+        "mode": "RGBA"
+      },
+      "has_transparency": true,
+      "bbox": [
+        7,
+        12,
+        252,
+        246
+      ],
+      "style_id": "plumber_2_5d_v1",
+      "prompt_hash": null,
+      "version": 1,
+      "license": "provider-generated (OpenAI image); project-owned usage",
+      "ports": {},
+      "ports_after_rotation": [
+        {},
+        {
+          "top": false,
+          "right": false,
+          "bottom": false,
+          "left": false
+        },
+        {
+          "top": false,
+          "right": false,
+          "bottom": false,
+          "left": false
+        },
+        {
+          "top": false,
+          "right": false,
+          "bottom": false,
+          "left": false
+        }
+      ],
+      "previews": null,
+      "phaser_snapshot": "evidence/screenshots/plumber-preparing-desktop.png",
+      "tech": "REJECTED_TECH"
+    },
+    "pipe_cap": {
+      "state": "approved",
+      "provider": "chatgpt-subscription (tools/gpt_imagegen_chatgpt.mjs)",
+      "origin": "gpt-image-subscription",
+      "source_file": "assetgen-work/candidates/pipe_cap_low_1.png",
+      "file": "assets/plumber/tiles/pipe_cap.png",
+      "sha256": "026ffc95c5fd7ec8fe55b3aa1309e828560166d177d19b50f2dba5d7cf17ff8c",
+      "dimensions": {
+        "width": 256,
+        "height": 256,
+        "mode": "RGBA"
+      },
+      "has_transparency": true,
+      "bbox": [
+        42,
+        0,
+        214,
+        256
+      ],
+      "style_id": "plumber_2_5d_v1",
+      "prompt_hash": "1cc6c17b40e82691e94579bef740490d1e44fa81d995eafe7f8ab752270cab4d",
+      "version": 1,
+      "license": "provider-generated (OpenAI image); project-owned usage",
+      "ports": {
+        "top": true,
+        "right": false,
+        "bottom": false,
+        "left": false
+      },
+      "ports_after_rotation": [
+        {
+          "top": true,
+          "right": false,
+          "bottom": false,
+          "left": false
+        },
+        {
+          "top": false,
+          "right": true,
+          "bottom": false,
+          "left": false
+        },
+        {
+          "top": false,
+          "right": false,
+          "bottom": true,
+          "left": false
+        },
+        {
+          "top": false,
+          "right": false,
+          "bottom": false,
+          "left": true
+        }
+      ],
+      "previews": null,
+      "phaser_snapshot": "evidence/screenshots/plumber-preparing-desktop.png",
+      "tech": "REJECTED_TECH"
+    },
+    "pipe_cross": {
+      "state": "approved",
+      "provider": "chatgpt-subscription (tools/gpt_imagegen_chatgpt.mjs)",
+      "origin": "gpt-image-subscription",
+      "source_file": "assetgen-work/finals/pipe_cross_medium_1.png",
+      "file": "assets/plumber/tiles/pipe_cross.png",
+      "sha256": "2d9872860a09a3b9484d68d87565bb65f5230af52b5f31d036e8b515fb36b360",
+      "dimensions": {
+        "width": 256,
+        "height": 256,
+        "mode": "RGBA"
+      },
+      "has_transparency": true,
+      "bbox": [
+        0,
+        4,
+        255,
+        251
+      ],
+      "style_id": "plumber_2_5d_v1",
+      "prompt_hash": "b4fa0182a6a77f45b4972441adcac9a9455fef453cc7f7d8b272c9d74c4c5ee3",
+      "version": 1,
+      "license": "provider-generated (OpenAI image); project-owned usage",
+      "ports": {
+        "top": true,
+        "right": true,
+        "bottom": true,
+        "left": true
+      },
+      "ports_after_rotation": [
+        {
+          "top": true,
+          "right": true,
+          "bottom": true,
+          "left": true
+        },
+        {
+          "top": true,
+          "right": true,
+          "bottom": true,
+          "left": true
+        },
+        {
+          "top": true,
+          "right": true,
+          "bottom": true,
+          "left": true
+        },
+        {
+          "top": true,
+          "right": true,
+          "bottom": true,
+          "left": true
+        }
+      ],
+      "previews": null,
+      "phaser_snapshot": "evidence/screenshots/plumber-preparing-desktop.png",
+      "tech": "VALID_TECH"
+    },
+    "pipe_elbow": {
+      "state": "approved",
+      "provider": "chatgpt-subscription (tools/gpt_imagegen_chatgpt.mjs)",
+      "origin": "gpt-image-subscription",
+      "source_file": "assetgen-work/finals/pipe_elbow_medium_1.png",
+      "file": "assets/plumber/tiles/pipe_elbow.png",
+      "sha256": "17124aab34d8516efdf256b02854e4a84a3e716f2919f9127edcc74ddd96dfb0",
+      "dimensions": {
+        "width": 256,
+        "height": 256,
+        "mode": "RGBA"
+      },
+      "has_transparency": true,
+      "bbox": [
+        82,
+        0,
+        245,
+        171
+      ],
+      "style_id": "plumber_2_5d_v1",
+      "prompt_hash": "2f182c18248469480edba4553d82a37ff84455b034a4f10807507fe64771c3d8",
+      "version": 1,
+      "license": "provider-generated (OpenAI image); project-owned usage",
+      "ports": {
+        "top": true,
+        "right": true,
+        "bottom": false,
+        "left": false
+      },
+      "ports_after_rotation": [
+        {
+          "top": true,
+          "right": true,
+          "bottom": false,
+          "left": false
+        },
+        {
+          "top": false,
+          "right": true,
+          "bottom": true,
+          "left": false
+        },
+        {
+          "top": false,
+          "right": false,
+          "bottom": true,
+          "left": true
+        },
+        {
+          "top": true,
+          "right": false,
+          "bottom": false,
+          "left": true
+        }
+      ],
+      "previews": null,
+      "phaser_snapshot": "evidence/screenshots/plumber-preparing-desktop.png",
+      "tech": "VALID_TECH"
+    },
+    "pipe_straight": {
+      "state": "approved",
+      "provider": "chatgpt-subscription (tools/gpt_imagegen_chatgpt.mjs)",
+      "origin": "gpt-image-subscription",
+      "source_file": "assetgen-work/finals/pipe_straight_medium_1.png",
+      "file": "assets/plumber/tiles/pipe_straight.png",
+      "sha256": "48108881aea34c012847c036d4c415a0cd08629fe3126e64131911d9129fdbd8",
+      "dimensions": {
+        "width": 256,
+        "height": 256,
+        "mode": "RGBA"
+      },
+      "has_transparency": true,
+      "bbox": [
+        71,
+        0,
+        186,
+        256
+      ],
+      "style_id": "plumber_2_5d_v1",
+      "prompt_hash": "accb505a4d0f422b6186b09d8f6f1cad009e322c503865789e8f0879ec540d2e",
+      "version": 1,
+      "license": "provider-generated (OpenAI image); project-owned usage",
+      "ports": {
+        "top": true,
+        "right": false,
+        "bottom": true,
+        "left": false
+      },
+      "ports_after_rotation": [
+        {
+          "top": true,
+          "right": false,
+          "bottom": true,
+          "left": false
+        },
+        {
+          "top": false,
+          "right": true,
+          "bottom": false,
+          "left": true
+        },
+        {
+          "top": true,
+          "right": false,
+          "bottom": true,
+          "left": false
+        },
+        {
+          "top": false,
+          "right": true,
+          "bottom": false,
+          "left": true
+        }
+      ],
+      "previews": null,
+      "phaser_snapshot": "evidence/screenshots/plumber-preparing-desktop.png",
+      "tech": "VALID_TECH"
+    },
+    "pipe_t": {
+      "state": "approved",
+      "provider": "chatgpt-subscription (tools/gpt_imagegen_chatgpt.mjs)",
+      "origin": "gpt-image-subscription",
+      "source_file": "assetgen-work/finals/pipe_t_medium_1.png",
+      "file": "assets/plumber/tiles/pipe_t.png",
+      "sha256": "74834221edf76b9ac546f15db082e10dfebf7d32976160b25d8786e1c58376ca",
+      "dimensions": {
+        "width": 256,
+        "height": 256,
+        "mode": "RGBA"
+      },
+      "has_transparency": true,
+      "bbox": [
+        7,
+        23,
+        251,
+        163
+      ],
+      "style_id": "plumber_2_5d_v1",
+      "prompt_hash": "d21d12601f522521ddd333be589b62691e6c6cbd673d532a1bcb84338e0a04b2",
+      "version": 1,
+      "license": "provider-generated (OpenAI image); project-owned usage",
+      "ports": {
+        "top": true,
+        "right": true,
+        "bottom": false,
+        "left": true
+      },
+      "ports_after_rotation": [
+        {
+          "top": true,
+          "right": true,
+          "bottom": false,
+          "left": true
+        },
+        {
+          "top": true,
+          "right": true,
+          "bottom": true,
+          "left": false
+        },
+        {
+          "top": false,
+          "right": true,
+          "bottom": true,
+          "left": true
+        },
+        {
+          "top": true,
+          "right": false,
+          "bottom": true,
+          "left": true
+        }
+      ],
+      "previews": null,
+      "phaser_snapshot": "evidence/screenshots/plumber-preparing-desktop.png",
+      "tech": "VALID_TECH"
+    },
+    "receiver_basic": {
+      "state": "approved",
+      "provider": "chatgpt-subscription (tools/gpt_imagegen_chatgpt.mjs)",
+      "origin": "gpt-image-subscription",
+      "source_file": "assetgen-work/finals/receiver_basic_medium_1.png",
+      "file": "assets/plumber/tiles/receiver_basic.png",
+      "sha256": "55359d3a48e6084c0e830399b30b3593cb0507b208e36a0cbba20ef1577f6325",
+      "dimensions": {
+        "width": 256,
+        "height": 256,
+        "mode": "RGBA"
+      },
+      "has_transparency": true,
+      "bbox": [
+        0,
+        34,
+        256,
+        226
+      ],
+      "style_id": "plumber_2_5d_v1",
+      "prompt_hash": "0322644ab3c529a1cea8ad7c3b793ce74920ba51f00f7e76a26e28d19117479e",
+      "version": 1,
+      "license": "provider-generated (OpenAI image); project-owned usage",
+      "ports": {
+        "top": false,
+        "right": false,
+        "bottom": false,
+        "left": true
+      },
+      "ports_after_rotation": [
+        {
+          "top": false,
+          "right": false,
+          "bottom": false,
+          "left": true
+        },
+        {
+          "top": true,
+          "right": false,
+          "bottom": false,
+          "left": false
+        },
+        {
+          "top": false,
+          "right": true,
+          "bottom": false,
+          "left": false
+        },
+        {
+          "top": false,
+          "right": false,
+          "bottom": true,
+          "left": false
+        }
+      ],
+      "previews": null,
+      "phaser_snapshot": "evidence/screenshots/plumber-preparing-desktop.png",
+      "tech": "REJECTED_TECH"
+    },
+    "source_basic": {
+      "state": "approved",
+      "provider": "chatgpt-subscription (tools/gpt_imagegen_chatgpt.mjs)",
+      "origin": "gpt-image-subscription",
+      "source_file": "assetgen-work/finals/source_basic_medium_1.png",
+      "file": "assets/plumber/tiles/source_basic.png",
+      "sha256": "a1286be90513395bd90708b3d16f8253e315472d0002ce8f70226457bef94780",
+      "dimensions": {
+        "width": 256,
+        "height": 256,
+        "mode": "RGBA"
+      },
+      "has_transparency": true,
+      "bbox": [
+        28,
+        4,
+        228,
+        215
+      ],
+      "style_id": "plumber_2_5d_v1",
+      "prompt_hash": "ffef6e70e0157d1b83c1f0866d9faa256bf8a62cd0b3cce6c799d1bd87e2c3cf",
+      "version": 1,
+      "license": "provider-generated (OpenAI image); project-owned usage",
+      "ports": {
+        "top": false,
+        "right": true,
+        "bottom": false,
+        "left": false
+      },
+      "ports_after_rotation": [
+        {
+          "top": false,
+          "right": true,
+          "bottom": false,
+          "left": false
+        },
+        {
+          "top": false,
+          "right": false,
+          "bottom": true,
+          "left": false
+        },
+        {
+          "top": false,
+          "right": false,
+          "bottom": false,
+          "left": true
+        },
+        {
+          "top": true,
+          "right": false,
+          "bottom": false,
+          "left": false
+        }
+      ],
+      "previews": null,
+      "phaser_snapshot": "evidence/screenshots/plumber-preparing-desktop.png",
+      "tech": "REJECTED_TECH"
+    },
+    "valve_basic": {
+      "state": "approved",
+      "provider": "chatgpt-subscription (tools/gpt_imagegen_chatgpt.mjs)",
+      "origin": "gpt-image-subscription",
+      "source_file": "assetgen-work/finals/valve_basic_medium_1.png",
+      "file": "assets/plumber/tiles/valve_basic.png",
+      "sha256": "259bdc4d1628283657fee6fd89b2edc00e64d087f8d759d17d5f56263af72cd3",
+      "dimensions": {
+        "width": 256,
+        "height": 256,
+        "mode": "RGBA"
+      },
+      "has_transparency": true,
+      "bbox": [
+        88,
+        0,
+        169,
+        256
+      ],
+      "style_id": "plumber_2_5d_v1",
+      "prompt_hash": "50bf75777a1ee4213d429b389178b5bce8a509174a5c08ce1047b71f41dbaaa5",
+      "version": 1,
+      "license": "provider-generated (OpenAI image); project-owned usage",
+      "ports": {
+        "top": true,
+        "right": false,
+        "bottom": true,
+        "left": false
+      },
+      "ports_after_rotation": [
+        {
+          "top": true,
+          "right": false,
+          "bottom": true,
+          "left": false
+        },
+        {
+          "top": false,
+          "right": true,
+          "bottom": false,
+          "left": true
+        },
+        {
+          "top": true,
+          "right": false,
+          "bottom": true,
+          "left": false
+        },
+        {
+          "top": false,
+          "right": true,
+          "bottom": false,
+          "left": true
+        }
+      ],
+      "previews": null,
+      "phaser_snapshot": "evidence/screenshots/plumber-preparing-desktop.png",
+      "tech": "VALID_TECH"
+    }
+  },
+  "generated_at": "2026-10-17T09:36:28.207151+00:00",
+  "states": [
+    "approved",
+    "generating",
+    "manual_review_required",
+    "placeholder",
+    "rejected",
+    "requested",
+    "retry",
+    "validating",
+    "waiting_for_limits",
+    "waiting_for_provider"
+  ]
 }
