@@ -55,7 +55,7 @@ export interface ChannelGeometry {
   tank: boolean;
 }
 
-const HALF_WIDTH = 0.075;
+const HALF_WIDTH = 0.11;
 
 const SIDE_ORDER: Side[] = ['top', 'right', 'bottom', 'left'];
 function rotateSide(side: Side, rot: number): Side {

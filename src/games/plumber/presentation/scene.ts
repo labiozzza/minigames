@@ -506,8 +506,10 @@ export class PlumberScene extends Phaser.Scene {
         // the model. No deferred sync/timer may be required for a correct view.
         img.setAngle((this.rots[i] ?? 0) * 90);
         img.setData('cell', i);
-        // Glass sits above the water layer → liquid reads as *inside* the tube.
-        img.setDepth(2);
+        // The approved glass tiles are opaque through the bore, so the liquid layer
+        // must sit *above* the sprite (depth 2) and be clipped to a band narrower
+        // than the tube, leaving the walls visible around it → reads as inside.
+        img.setDepth(1);
         this.sprites.push(img);
       } else {
         const g = this.add.graphics();
@@ -517,7 +519,7 @@ export class PlumberScene extends Phaser.Scene {
         this.gfx.push(g);
       }
       const wg = this.add.graphics();
-      wg.setDepth(1);
+      wg.setDepth(2);
       this.waterGfx.push(wg);
     }
     this.redrawAll();
@@ -583,7 +585,7 @@ export class PlumberScene extends Phaser.Scene {
       const img = this.add.image(x + this.cell / 2, y + this.cell / 2, 'plumber', frame);
       img.setDisplaySize(this.cell * 0.96, this.cell * 0.96);
       img.setAngle((this.rots[i] ?? 0) * 90);
-      img.setDepth(2);
+      img.setDepth(1);
       this.sprites[i] = img;
     } else {
       const g = this.add.graphics();
@@ -614,24 +616,9 @@ export class PlumberScene extends Phaser.Scene {
 
     if (frac > 0) {
       if (kind === 'source' || kind === 'receiver') {
-        // Tanks are reservoirs, not pipes: fill a bounded reservoir body.
-        const inset = this.cell * 0.24;
-        const wdt = this.cell - inset * 2;
-        const bodyH = this.cell - inset * 2;
-        const hgt = bodyH * Math.min(1, frac);
-        const rad = Math.min(10, wdt * 0.18);
-        g.fillStyle(darken(color, 0.35), 0.9);
-        g.fillRoundedRect(x + inset, y + this.cell - inset - hgt, wdt, hgt, rad);
-        g.fillStyle(color, 0.92);
-        g.fillRoundedRect(x + inset + 2, y + this.cell - inset - hgt + 2, wdt - 4, Math.max(0, hgt - 2), rad);
-        if (this.qLevel < 2 && hgt > 8) {
-          g.fillStyle(lighten(color, 0.55), 0.4);
-          g.fillRoundedRect(x + inset + wdt * 0.16, y + this.cell - inset - hgt + 4, wdt * 0.28, Math.max(2, hgt - 8), rad * 0.6);
-        }
-        if (this.qLevel < 1) {
-          g.lineStyle(2, 0xffffff, 0.18);
-          g.strokeRoundedRect(x + inset, y + this.cell - inset - bodyH, wdt, bodyH, rad);
-        }
+        // Tanks are reservoirs, not pipes. A source is an infinite tank → always full;
+        // a receiver fills with what it has actually received.
+        this.drawTankWater(g, x, y, color, kind === 'source' ? 1 : frac);
       } else {
         this.drawChannelWater(g, i, x, y, kind, color, frac);
       }
@@ -686,10 +673,12 @@ export class PlumberScene extends Phaser.Scene {
   }
 
   /**
-   * Liquid follows the *internal channel* of the pipe, from the inlet side.
-   * Rendered as a stack of layers (dark refraction edge → body → volume core →
-   * moving specular streak → meniscus) so it reads as volume inside the glass,
-   * not as a stroked line. Pure presentation: geometry comes from the model.
+   * Liquid follows the *internal channel* of the pipe, from the inlet side. Because
+   * the approved glass tiles are opaque through the bore (proven: pipe_straight
+   * centre pixel alpha≈252), the liquid has to be painted *over* the sprite and
+   * confined to a band narrower than the tube so the glass walls stay visible → it
+   * reads as volume inside the tube, not a line on top of it. Geometry is pure
+   * presentation; the fill level comes from the model.
    */
   private drawChannelWater(g: Phaser.GameObjects.Graphics, i: number, x: number, y: number, kind: string, color: number, frac: number): void {
     const rot = this.rots[i] ?? 0;
@@ -702,7 +691,7 @@ export class PlumberScene extends Phaser.Scene {
     const width = Math.max(4, geo.halfWidth * 2 * c);
     const w2 = width / 2;
     const light = lighten(color, 0.5);
-    const dark = darken(color, 0.4);
+    const dark = darken(color, 0.45);
     const px = (p: { x: number; y: number }) => ({ x: x + p.x * c, y: y + p.y * c });
     const stroke = (a: { x: number; y: number }, b: { x: number; y: number }, w: number, col: number, alpha: number) => {
       g.lineStyle(w, col, alpha);
@@ -713,23 +702,22 @@ export class PlumberScene extends Phaser.Scene {
     };
     const pts = filled.map((s) => ({ a: px(s.a), b: px(s.b) }));
     const cap = pts[pts.length - 1].b;
-    // 1. refraction edge: full-width dark band + round joints keep the run seamless.
-    for (const s of pts) stroke(s.a, s.b, width, dark, 0.6);
-    for (const s of pts) { g.fillStyle(dark, 0.6); g.fillCircle(s.a.x, s.a.y, w2); }
-    g.fillStyle(dark, 0.6);
-    g.fillCircle(cap.x, cap.y, w2);
-    // 2. body.
-    for (const s of pts) stroke(s.a, s.b, width, color, 0.92);
-    for (const s of pts) { g.fillStyle(color, 0.92); g.fillCircle(s.a.x, s.a.y, w2); }
-    g.fillStyle(color, 0.92);
-    g.fillCircle(cap.x, cap.y, w2);
-    // 3. volume core (lighter, narrower) gives the liquid mass.
-    for (const s of pts) stroke(s.a, s.b, width * 0.64, light, 0.5);
-    for (const s of pts) { g.fillStyle(light, 0.5); g.fillCircle(s.a.x, s.a.y, w2 * 0.64); }
-    g.fillStyle(light, 0.5);
-    g.fillCircle(cap.x, cap.y, w2 * 0.64);
-    if (this.qLevel >= 2) return; // decoration budget exhausted: keep the volume, drop the sheen.
-    // 4. specular streak, offset perpendicular to each arm, flowing along the water.
+    // A capsule run: stroke every arm, then round the joints and the front cap so
+    // the run stays seamless across arms and across neighbouring cells.
+    const band = (w: number, col: number, alpha: number) => {
+      for (const s of pts) stroke(s.a, s.b, w, col, alpha);
+      for (const s of pts) { g.fillStyle(col, alpha); g.fillCircle(s.a.x, s.a.y, w / 2); }
+      g.fillStyle(col, alpha);
+      g.fillCircle(cap.x, cap.y, w / 2);
+    };
+    // 1. wet seat: a slightly wider dark rim where the liquid meets the inner glass.
+    band(width * 1.22, dark, 0.45);
+    // 2. body: the liquid volume — the layer that must be clearly visible.
+    band(width, color, 0.94);
+    // 3. volume core: a lighter inner mass so it reads as depth, not a flat line.
+    band(width * 0.56, light, 0.34);
+    if (this.qLevel >= 2) return; // decoration budget exhausted: keep the visible volume.
+    // 4. front-glass sheen, offset perpendicular to each arm.
     for (const s of pts) {
       const dx = s.b.x - s.a.x;
       const dy = s.b.y - s.a.y;
@@ -740,10 +728,42 @@ export class PlumberScene extends Phaser.Scene {
       stroke({ x: s.a.x + nx * off, y: s.a.y + ny * off }, { x: s.b.x + nx * off, y: s.b.y + ny * off }, Math.max(1.5, width * 0.16), 0xffffff, 0.3);
     }
     // 5. meniscus at the moving fill front.
-    g.fillStyle(light, 0.85);
-    g.fillCircle(cap.x, cap.y, w2 * 0.72);
-    g.fillStyle(0xffffff, 0.22);
-    g.fillCircle(cap.x, cap.y, w2 * 0.34);
+    g.fillStyle(light, 0.75);
+    g.fillCircle(cap.x, cap.y, w2 * 0.7);
+    g.fillStyle(0xffffff, 0.2);
+    g.fillCircle(cap.x, cap.y, w2 * 0.3);
+  }
+
+  /**
+   * Source/receiver are reservoirs, not channels. The approved tank tiles ship with
+   * a fixed liquid colour baked in, so repaint the interior as empty glass first,
+   * then fill it from the bottom with the *actual* liquid colour and level.
+   */
+  private drawTankWater(g: Phaser.GameObjects.Graphics, x: number, y: number, color: number, frac: number): void {
+    const c = this.cell;
+    const inset = c * 0.2;
+    const wdt = c - inset * 2;
+    const bodyH = c - inset * 2;
+    const rad = Math.min(12, wdt * 0.2);
+    const top = y + inset;
+    const bottom = y + c - inset;
+    g.fillStyle(0x0e1a2b, 0.62);
+    g.fillRoundedRect(x + inset, top, wdt, bodyH, rad);
+    const hgt = bodyH * Math.min(1, Math.max(0, frac));
+    if (hgt > 0) {
+      g.fillStyle(darken(color, 0.35), 0.95);
+      g.fillRoundedRect(x + inset + 1, bottom - hgt, wdt - 2, hgt, rad);
+      g.fillStyle(color, 0.95);
+      g.fillRoundedRect(x + inset + 3, bottom - hgt + 2, wdt - 6, Math.max(0, hgt - 3), rad * 0.8);
+      if (this.qLevel < 2 && hgt > 8) {
+        g.fillStyle(lighten(color, 0.55), 0.4);
+        g.fillRoundedRect(x + inset + wdt * 0.16, bottom - hgt + 4, wdt * 0.26, Math.max(2, hgt - 8), rad * 0.6);
+      }
+    }
+    g.fillStyle(0xffffff, 0.06);
+    g.fillRoundedRect(x + inset + 2, top + 2, wdt * 0.5, bodyH - 4, rad * 0.6);
+    g.lineStyle(2, 0xffffff, 0.16);
+    g.strokeRoundedRect(x + inset, top, wdt, bodyH, rad);
   }
 
   private kindOf(i: number): string {

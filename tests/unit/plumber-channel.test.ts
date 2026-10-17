@@ -54,4 +54,25 @@ describe('channel geometry matches model ports', () => {
   it('zero progress draws nothing', () => {
     expect(fillFrom(channelGeometry('cross', 0, true), 'left', 0)).toEqual([]);
   });
+
+  it('liquid band stays narrower than the tube so the glass walls remain visible', () => {
+    // The approved glass tiles are opaque through the bore, so the liquid is drawn
+    // over the sprite: its band must leave a wall on each side (tube outer
+    // half-width in the tiles is ~0.1875) or it would cover the tube outline.
+    for (const kind of KINDS) {
+      const geo = channelGeometry(kind, 0, true);
+      expect(geo.halfWidth).toBeGreaterThan(0.05);
+      expect(geo.halfWidth * 2).toBeLessThan(0.33);
+    }
+  });
+
+  it('partial fill grows away from the inlet', () => {
+    const geo = channelGeometry('elbow', 0, true); // inlet top -> corner -> right
+    const inlet = geo.ports.find((p) => p.side === 'top')!.p;
+    const segs = fillFrom(geo, 'top', 0.4);
+    const far = segs[segs.length - 1].b;
+    const near = segs[0].a;
+    const d = (p: { x: number; y: number }) => Math.hypot(p.x - inlet.x, p.y - inlet.y);
+    expect(d(far)).toBeGreaterThan(d(near));
+  });
 });
