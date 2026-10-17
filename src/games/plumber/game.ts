@@ -28,6 +28,7 @@ import { hintFromWitness } from './domain/solver';
 import { computeStars, familyForMode, parseShareCode, shareCode, unlockedCollectibles, utcDayString, dailyPuzzleId, dailySeed, COLLECTIBLES, type Mode, type ProgressSummary } from './domain/progression';
 import { PLUMBER_ID } from './index';
 import { PlumberScene } from './presentation/scene';
+import { mechanicsOf, nextGuide, pendingMechanic, type GuideStep, type Mechanic } from './tutorial/logic';
 
 const TICK_MS = 200;
 
@@ -68,6 +69,8 @@ export class PlumberGame implements GameHandle {
   private onKey = (e: KeyboardEvent) => this.handleKey(e);
   private onVis = () => this.handleVisibility();
   private cursor = 0;
+  private guideStep: GuideStep | null = null;
+  private skipBtn: HTMLButtonElement | null = null;
 
   private constructor() {}
 
@@ -103,7 +106,9 @@ export class PlumberGame implements GameHandle {
     const spacer = el('div', 'top-actions');
     this.modeBtn = button('', 'icon-btn mode-btn', () => this.openLevels(), t('plumber.mode'));
     const settings = button('⚙', 'icon-btn', () => window.dispatchEvent(new CustomEvent('mg:open-settings')), t('game.settings'));
-    spacer.append(this.modeBtn, settings);
+    this.skipBtn = button('✕', 'icon-btn guide-skip', () => this.skipTutorial(), t('tutorial.skip'));
+    this.skipBtn.style.display = 'none';
+    spacer.append(this.modeBtn, this.skipBtn, settings);
     top.append(back, this.titleEl, spacer);
     this.goalEl = el('div', 'plumber-goal', '');
     const fieldWrap = el('div', 'field-wrap');
@@ -324,6 +329,29 @@ export class PlumberGame implements GameHandle {
       return;
     }
     if (this.state.phase !== 'PREPARING') return;
+    // §8 guided tap: on the highlighted cell a single touch performs the very
+    // action the guide asks for (rotate/valve/carry), so no mode juggling.
+    const g = this.guideStep;
+    if (g && g.cell === i && (g.action === 'valve' || g.action === 'pickup' || g.action === 'place' || g.action === 'placeStock')) {
+      this.beginUndo();
+      const ok =
+        g.action === 'valve' ? applyCommand(this.state, { type: 'toggleValve', index: i })
+        : g.action === 'pickup' ? applyCommand(this.state, { type: 'pickup', index: i })
+        : g.action === 'place' ? applyCommand(this.state, { type: 'place', index: i })
+        : applyCommand(this.state, { type: 'placeStock', kind: this.state.inventoryLeft[0], index: i });
+      if (ok) {
+        this.redoStack = [];
+        this.audio.select();
+        this.hintCell = -1;
+        this.syncScene(null);
+        void this.persist();
+      } else {
+        this.undoStack.pop();
+        this.audio.error();
+      }
+      this.refreshChrome();
+      return;
+    }
     // Move mode: pickup / place instead of rotate.
     if (this.moveMode) {
       this.undoStack.push(snapshot(this.state));
@@ -600,6 +628,8 @@ export class PlumberGame implements GameHandle {
       slot.stars[key] = Math.max(slot.stars[key] ?? 0, stars);
       slot.fams[String(this.level)] = { family: this.def.family, mode };
       slot.selected = mode;
+      // §8: the mechanics this level introduced are now mastered by real play.
+      for (const mech of mechanicsOf(this.def)) if (!slot.tutorial.includes(mech)) slot.tutorial.push(mech);
       this.ctx.save.lastPlayed = { gameId: PLUMBER_ID, levelNumber: this.level + 1 };
       syncPlumberMirror(slot);
     }
@@ -647,6 +677,8 @@ export class PlumberGame implements GameHandle {
     this.audio.error();
     this.bannerEl.textContent = this.ctx.t('plumber.failed') + (this.state.leakCell !== null ? ` (#${this.state.leakCell})` : '');
     this.bannerEl.hidden = false;
+    // §8: show the real cause on the real cell, not just a red number.
+    this.scene?.flashError(this.state.errorCell ?? this.state.leakCell ?? -1);
     void this.persist();
   }
 
@@ -859,6 +891,39 @@ export class PlumberGame implements GameHandle {
     const kinds = this.state.rots.map((_, i) => kindAt(this.state, i));
     this.scene.sync(this.state.rots, this.state.water, this.state.waterColor, this.fractions(), this.state.phase === 'FAILED' ? (this.state.errorCell ?? this.state.leakCell ?? -1) : -1, this.hintCell, animate, kinds, this.state.valves, this.state.cameFrom);
     this.scene.setFocus(this.cursor);
+    this.updateGuide();
+  }
+
+  private tutorialActive(): boolean {
+    if (this.sharedLevel || this.dailyLevel) return false;
+    if (this.slot.tutorialSeen) return false;
+    if (this.state.phase === 'WON') return false;
+    return this.pendingMechanic() !== null;
+  }
+
+  private pendingMechanic(): Mechanic | null {
+    return pendingMechanic(this.def, this.slot.tutorial ?? []);
+  }
+
+  /** §8: point at the real next action until the mechanic is mastered (no text). */
+  private updateGuide(): void {
+    const active = this.tutorialActive();
+    const step = active ? nextGuide(this.def, this.state, this.pendingMechanic()) : null;
+    this.guideStep = step;
+    if (this.scene) this.scene.setGuide(active && step?.cell !== undefined ? step.cell : null, active && step?.cell !== undefined ? step.icon : undefined);
+    this.startBtn?.classList.toggle('guide-pulse', active && step?.action === 'start');
+    this.progBar?.classList.toggle('guide-pulse', active && step?.action === 'program');
+    if (this.skipBtn) this.skipBtn.style.display = active ? '' : 'none';
+  }
+
+  private skipTutorial(): void {
+    const slot = this.slot;
+    for (const m of mechanicsOf(this.def)) if (!slot.tutorial.includes(m)) slot.tutorial.push(m);
+    slot.tutorialSeen = true;
+    toast(this.toastRoot!, this.ctx.t('tutorial.skip'));
+    this.updateGuide();
+    this.refreshChrome();
+    void this.persist();
   }
 
   private refreshChrome(): void {
@@ -1044,6 +1109,10 @@ export class PlumberGame implements GameHandle {
       water: () => [...this.state.water],
       tick: () => this.state.tick,
       fractions: () => this.fractions(),
+      guide: () => (this.guideStep ? { action: this.guideStep.action, cell: this.guideStep.cell ?? null, icon: this.guideStep.icon, mechanic: this.guideStep.mechanic } : null),
+      mechanic: () => this.pendingMechanic(),
+      tutorial: () => [...(this.slot.tutorial ?? [])],
+      skipTutorial: () => this.skipTutorial(),
     };
   }
 

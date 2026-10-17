@@ -144,6 +144,8 @@ export interface PlumberSave {
   completed: number[];
   active: PlumberSessionSave | null;
   tutorialSeen: boolean;
+  /** Mechanics already taught by the onboarding guide (§8). */
+  tutorial: string[];
   stars: Record<string, number>;
   collections: string[];
   stats: Record<'child' | 'normal' | 'expert', PlumberModeStats>;
@@ -296,6 +298,7 @@ export function emptyPlumber(): PlumberSave {
     fams: {},
     modes: { child: emptyModeProgress(), normal: emptyModeProgress(), expert: emptyModeProgress() },
     selected: 'child',
+    tutorial: [],
   };
 }
 
@@ -379,6 +382,7 @@ export function getPlumberSave(save: SaveData): PlumberSave {
     }
     if (!g.dailies || typeof g.dailies !== 'object') g.dailies = {};
     if (!g.fams || typeof g.fams !== 'object') g.fams = {};
+    if (!Array.isArray(g.tutorial)) g.tutorial = [];
     if (!g.modes || typeof g.modes !== 'object' || !g.modes.child || !g.modes.normal || !g.modes.expert) {
       const legacy: PlumberSave = { ...emptyPlumber(), ...g };
       const derived = deriveModesFromLegacy(
@@ -485,6 +489,7 @@ export function sanitizeSave(raw: unknown): SaveData | null {
         completed: [],
         active: null,
         tutorialSeen: po.tutorialSeen === true,
+        tutorial: Array.isArray(po.tutorial) ? po.tutorial.filter((c): c is string => typeof c === 'string') : [],
         stars: starsOut,
         collections: Array.isArray(po.collections) ? po.collections.filter((c): c is string => typeof c === 'string') : [],
         stats: validStats(po.stats),
@@ -575,6 +580,8 @@ function mergePlumberProgress(merged: Record<string, unknown>, incR: Record<stri
   }
   merged.stars = stars;
   merged.collections = [...new Set([...((merged.collections as string[]) ?? []), ...((incR.collections as string[]) ?? [])])];
+  merged.tutorial = [...new Set([...((merged.tutorial as string[]) ?? []), ...((incR.tutorial as string[]) ?? [])])];
+  merged.tutorialSeen = (merged.tutorialSeen as boolean) || (incR.tutorialSeen as boolean) || false;
   const stats = merged.stats as Record<string, Record<string, number>> | undefined;
   const incStats = incR.stats as Record<string, Record<string, number>> | undefined;
   if (stats && incStats) {

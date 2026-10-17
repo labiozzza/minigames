@@ -18,7 +18,7 @@
 | 12 | D | Стиль 2.5D с объёмом/прозрачностью | 01 §8 | src/games/plumber/ | 8 базовых approved; миксеры/декор/коллекции в очереди | IN_PROGRESS |
 | 13 | D | Гибрид ассетов, масок, частиц и шейдерных эффектов | 01 §8 | — | — | IN_PROGRESS |
 | 14 | D | Комбинированное сенсорное/desktop-управление | 01 §- | src/games/plumber/ | E2E desktop+mobile tap | PASS |
-| 15 | D | Интерактивное обучение и адаптивные подсказки без чтения | 01 §- | — | — | IN_PROGRESS |
+| 15 | D | Интерактивное обучение и адаптивные подсказки без чтения | 01 §8 | src/games/plumber/tutorial/ | E2E onboarding no-reading + unit guide | PASS |
 | 16 | D | Уровни, звёзды, статистика, раздельный прогресс | 01 §- | — | — | stars+separate progress | PASS |
 | 17 | D | Undo/redo, подсказки, решение и пропуск | 01 §- | src/games/plumber/ | E2E undo+solver/hint unit | PASS |
 | 18 | D | Offline-first, автосохранение и облачная синхронизация | 01 §10 | src/games/plumber/ | save/restore ok; полный offline-PWA тест pending | IN_PROGRESS |

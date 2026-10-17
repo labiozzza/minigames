@@ -54,7 +54,8 @@ full: `04_PLUMBER_REMEDIATION_TZ_v1.2.md`, `README.md`,
 | 2026-10-17 | `cbcd733` | §6 generator/solver proof at scale | DONE | 10000+ mass, 0 fails; `diagnose()` statuses; `evidence/plumber-mass-report.json` |
 | 2026-10-17 | _§5_ | §5 three independent selectable modes + lossless v1→v2 migration | DONE | save schema v2 (`modes`/`selected`, per-mode `maxLevel/completed/active`, mirror kept); per-mode family schedule; server `modes` merge; mode-selector UI. Tests: `plumber-save` (11 incl. migration/stability/no-loss), server per-mode (2), e2e `modes.spec.ts` 2/2 (desktop) |
 | 2026-10-17 | _§7_ | §7 full input, camera, contextual UI | DONE | tap/long-press/drag-drop via real pointer+touch, guarded accidental rotation, pinch+wheel zoom (clamped), 1-finger pan when zoomed, release-outside cancel, keyboard (arrows/Enter/space/V/Z/Y/H/N) + visible focus ring, min 44px targets. Tests: `tests/e2e/input.spec.ts` 5/5 desktop + mobile |
-| — | — | §8 onboarding, §9 art**, §10 daily+weekly, §12 a11y/quality, §13 versioning | TODO | — |
+| 2026-10-17 | _§8_ | §8 reading-free onboarding | DONE | guide follows the certified witness and highlights the real cell/button with an action icon (rotate/valve/carry/start); single guided tap performs the action; mechanic unlocks introduce valve/filter/carry/multiflow/mixer/program on their levels; failure cause pulses on the real leaking cell; non-text skip, reduced-motion safe. Tests: `tests/unit/plumber-tutorial.test.ts` 4/4, `tests/e2e/onboarding.spec.ts` 3/3 desktop+mobile |
+| — | — | §9 art**, §10 daily+weekly, §12 a11y/quality, §13 versioning | TODO | — |
 | — | — | §14–§18 P2 | TODO | — |
 
 ** Art-dependent item: temporary geometric prototypes allowed, kept `BLOCKED_ASSET`

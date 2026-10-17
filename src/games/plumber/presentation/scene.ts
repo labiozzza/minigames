@@ -60,6 +60,9 @@ export class PlumberScene extends Phaser.Scene {
   private oy = 0;
   private focusGfx!: Phaser.GameObjects.Graphics;
   private focus = -1;
+  private guideGfx!: Phaser.GameObjects.Graphics;
+  private guideIcon: Phaser.GameObjects.Text | null = null;
+  private errorGfx!: Phaser.GameObjects.Graphics;
   private pointers = new Map<number, PointerTrack>();
   private pinchStart = 0;
   private pinchZoom = 1;
@@ -104,6 +107,10 @@ export class PlumberScene extends Phaser.Scene {
     this.buildCells();
     this.focusGfx = this.add.graphics();
     this.focusGfx.setDepth(1000);
+    this.guideGfx = this.add.graphics();
+    this.guideGfx.setDepth(1001);
+    this.errorGfx = this.add.graphics();
+    this.errorGfx.setDepth(1002);
     this.installCamera();
     this.scale.on('resize', () => {
       this.layout();
@@ -308,6 +315,52 @@ export class PlumberScene extends Phaser.Scene {
     const { x, y } = this.cellXY(this.focus);
     this.focusGfx.lineStyle(3, 0xffffff, 0.9);
     this.focusGfx.strokeRoundedRect(x + 2, y + 2, this.cell - 4, this.cell - 4, 8);
+  }
+
+  private reducedMotion(): boolean {
+    return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  /**
+   * Onboarding highlight (§8): a pulsing ring on the real cell to touch plus an
+   * action icon. Never text. Respects reduced-motion (static ring, no pulse).
+   */
+  setGuide(cell: number | null, icon?: string): void {
+    if (!this.guideGfx) return;
+    this.guideGfx.clear();
+    if (this.guideIcon) { this.guideIcon.destroy(); this.guideIcon = null; }
+    if (cell === null || cell < 0) return;
+    const { x, y } = this.cellXY(cell);
+    this.guideGfx.lineStyle(5, 0xf2c230, 0.95);
+    this.guideGfx.strokeRoundedRect(x + 3, y + 3, this.cell - 6, this.cell - 6, 10);
+    if (icon) {
+      this.guideIcon = this.add.text(x + this.cell / 2, y + this.cell / 2, icon, { fontSize: `${Math.round(this.cell * 0.42)}px` });
+      this.guideIcon.setOrigin(0.5);
+      this.guideIcon.setDepth(1003);
+    }
+    if (!this.reducedMotion()) {
+      this.guideGfx.setAlpha(1);
+      this.tweens.add({ targets: this.guideGfx, alpha: 0.45, duration: 700, yoyo: true, repeat: -1 });
+    }
+  }
+
+  /** Non-textual failure cue: the real leaking cell pulses red. */
+  flashError(cell: number): void {
+    if (!this.errorGfx || cell < 0 || cell >= this.def.gridW * this.def.gridH) return;
+    const { x, y } = this.cellXY(cell);
+    this.errorGfx.clear();
+    this.errorGfx.lineStyle(6, 0xe05a4e, 1);
+    this.errorGfx.strokeRoundedRect(x + 3, y + 3, this.cell - 6, this.cell - 6, 10);
+    if (this.reducedMotion()) return;
+    this.errorGfx.setAlpha(1);
+    this.tweens.add({
+      targets: this.errorGfx,
+      alpha: 0,
+      duration: 900,
+      repeat: 2,
+      yoyo: true,
+      onComplete: () => this.errorGfx.clear(),
+    });
   }
 
   cameraState(): { zoom: number; scrollX: number; scrollY: number } {
