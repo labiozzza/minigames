@@ -1,6 +1,7 @@
 // Plumber Phaser scene: pure presentation of RuntimeState. No game logic here.
 import * as Phaser from 'phaser';
 import { PIPE_CAPACITY, portsOf, type LevelDefinition } from '../domain/model';
+import { channelGeometry, fillFrom, type Side } from './channel';
 
 export const TILE = 256;
 
@@ -46,6 +47,7 @@ export class PlumberScene extends Phaser.Scene {
   private valves: boolean[] = [];
   private colors: Array<string | null> = [];
   private fractions: number[] = [];
+  private cameFrom: Array<Side | null> = [];
   private leak = -1;
   private hint = -1;
 
@@ -141,10 +143,11 @@ export class PlumberScene extends Phaser.Scene {
   }
 
   /** Full state sync from model (rots, kinds, valves, water per cell, extras). */
-  sync(rots: number[], _water: number[], colors: Array<string | null>, fractions: number[], leak: number, hint: number, animate: number | null, kinds?: string[], valves?: boolean[]): void {
+  sync(rots: number[], _water: number[], colors: Array<string | null>, fractions: number[], leak: number, hint: number, animate: number | null, kinds?: string[], valves?: boolean[], cameFrom?: Array<Side | null>): void {
     this.rots = [...rots];
     if (kinds) this.kinds = [...kinds];
     if (valves) this.valves = [...valves];
+    if (cameFrom) this.cameFrom = [...cameFrom];
     void _water;
     this.colors = [...colors];
     this.fractions = [...fractions];
@@ -204,26 +207,77 @@ export class PlumberScene extends Phaser.Scene {
     g.clear();
     const { x, y } = this.cellXY(i);
     const frac = this.fractions[i] ?? 0;
-    if (frac <= 0) {
-      if (i === this.leak) {
-        g.fillStyle(0xe05a4e, 0.9);
-        g.fillCircle(x + this.cell / 2, y + this.cell / 2, this.cell * 0.1);
-      }
-      if (i === this.hint) {
-        g.lineStyle(3, 0xf2c230, 1);
-        g.strokeRoundedRect(x + 3, y + 3, this.cell - 6, this.cell - 6, 8);
-      }
-      return;
-    }
+    const kind = this.kindOf(i);
     const color = WATER_COLORS[this.colors[i] ?? 'blue'] ?? 0x2fa8de;
-    const inset = this.cell * 0.3;
-    const wdt = this.cell - inset * 2;
-    const hgt = (this.cell - inset * 2) * Math.min(1, frac);
-    g.fillStyle(color, 0.8);
-    g.fillRoundedRect(x + inset, y + this.cell - inset - hgt, wdt, hgt, Math.min(8, wdt * 0.2));
+
+    if (i === this.leak && frac <= 0) {
+      g.fillStyle(0xe05a4e, 0.9);
+      g.fillCircle(x + this.cell / 2, y + this.cell / 2, this.cell * 0.1);
+    }
+
+    if (frac > 0) {
+      if (kind === 'source' || kind === 'receiver') {
+        // Tanks are reservoirs, not pipes: fill a bounded reservoir body.
+        const inset = this.cell * 0.24;
+        const wdt = this.cell - inset * 2;
+        const bodyH = this.cell - inset * 2;
+        const hgt = bodyH * Math.min(1, frac);
+        g.fillStyle(color, 0.85);
+        g.fillRoundedRect(x + inset, y + this.cell - inset - hgt, wdt, hgt, Math.min(10, wdt * 0.18));
+        g.lineStyle(2, 0xffffff, 0.18);
+        g.strokeRoundedRect(x + inset, y + this.cell - inset - bodyH, wdt, bodyH, Math.min(10, wdt * 0.18));
+      } else {
+        this.drawChannelWater(g, i, x, y, kind, color, frac);
+      }
+    }
+
     if (i === this.hint) {
       g.lineStyle(3, 0xf2c230, 1);
       g.strokeRoundedRect(x + 3, y + 3, this.cell - 6, this.cell - 6, 8);
+    }
+  }
+
+  /** Liquid follows the internal channel of the pipe, from the inlet side. */
+  private drawChannelWater(g: Phaser.GameObjects.Graphics, i: number, x: number, y: number, kind: string, color: number, frac: number): void {
+    const rot = this.rots[i] ?? 0;
+    const open = kind !== 'valve' || (this.valves[i] ?? true);
+    const geo = channelGeometry(kind as never, rot, open);
+    if (geo.segments.length === 0) return;
+    const filled = fillFrom(geo, this.cameFrom[i] ?? null, frac);
+    if (filled.length === 0) return;
+    const c = this.cell;
+    const width = Math.max(3, geo.halfWidth * 2 * c);
+    const px = (p: { x: number; y: number }) => ({ x: x + p.x * c, y: y + p.y * c });
+    // Outer wet band.
+    g.lineStyle(width, color, 0.85);
+    for (const s of filled) {
+      const a = px(s.a);
+      const b = px(s.b);
+      g.beginPath();
+      g.moveTo(a.x, a.y);
+      g.lineTo(b.x, b.y);
+      g.strokePath();
+    }
+    // Round joints so corners/tees connect seamlessly.
+    g.fillStyle(color, 0.85);
+    for (const s of filled) {
+      const a = px(s.a);
+      g.fillCircle(a.x, a.y, width / 2);
+    }
+    const last = filled[filled.length - 1];
+    if (last) {
+      const b = px(last.b);
+      g.fillCircle(b.x, b.y, width / 2);
+    }
+    // Inner highlight (reads as liquid depth, no topology change).
+    g.lineStyle(Math.max(1, width * 0.32), 0xffffff, 0.16);
+    for (const s of filled) {
+      const a = px(s.a);
+      const b = px(s.b);
+      g.beginPath();
+      g.moveTo(a.x, a.y);
+      g.lineTo(b.x, b.y);
+      g.strokePath();
     }
   }
 

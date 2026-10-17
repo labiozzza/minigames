@@ -723,7 +723,7 @@ export class PlumberGame implements GameHandle {
   private syncScene(animate: number | null): void {
     if (!this.scene) return;
     const kinds = this.state.rots.map((_, i) => kindAt(this.state, i));
-    this.scene.sync(this.state.rots, this.state.water, this.state.waterColor, this.fractions(), this.state.phase === 'FAILED' ? (this.state.errorCell ?? this.state.leakCell ?? -1) : -1, this.hintCell, animate, kinds, this.state.valves);
+    this.scene.sync(this.state.rots, this.state.water, this.state.waterColor, this.fractions(), this.state.phase === 'FAILED' ? (this.state.errorCell ?? this.state.leakCell ?? -1) : -1, this.hintCell, animate, kinds, this.state.valves, this.state.cameFrom);
   }
 
   private refreshChrome(): void {
