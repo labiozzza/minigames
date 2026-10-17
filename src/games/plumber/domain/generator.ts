@@ -9,6 +9,7 @@ import {
   SCHEMA_VERSION,
   applyCommand,
   createRuntime,
+  portsOf,
   runToEnd,
   totalVolume,
   type CellDef,
@@ -54,38 +55,58 @@ function rotForConnection(inSide: Dir, outSide: Dir): { kind: CellDef['kind']; r
   return { kind: 'elbow', rot };
 }
 
-function manhattanPath(_w: number, h: number, sx: number, sy: number, tx: number, ty: number, rng: () => number): Array<[number, number]> | null {
-  const path: Array<[number, number]> = [[sx, sy]];
-  let x = sx;
-  let y = sy;
-  // Randomize jog columns for variety.
-  const jogAt = new Set<number>();
-  const span = Math.abs(tx - sx);
-  const dx0 = tx > sx ? 1 : -1;
-  const jogCount = Math.min(Math.max(0, span - 1), 1 + Math.floor(rng() * 2));
+type Edge = 'left' | 'right' | 'top' | 'bottom';
+
+function edgeCell(edge: Edge, w: number, h: number, rng: () => number): [number, number] {
+  if (edge === 'left') return [0, Math.floor(rng() * h)];
+  if (edge === 'right') return [w - 1, Math.floor(rng() * h)];
+  if (edge === 'top') return [Math.floor(rng() * w), 0];
+  return [Math.floor(rng() * w), h - 1];
+}
+
+/**
+ * Direction-varied route (§4 diversity): pick two different grid edges for the
+ * source and receiver, then walk a randomized monotone staircase between them.
+ * Monotone steps never revisit a cell, so the interior is distinct; the varied
+ * source/receiver edges make routes flow left→right, right→left, top→bottom and
+ * diagonally instead of always along the same axis.
+ */
+function routePath(w: number, h: number, rng: () => number): Array<[number, number]> | null {
+  const edges: Edge[] = ['left', 'right', 'top', 'bottom'];
+  const s = edges[Math.floor(rng() * edges.length)];
+  const others = edges.filter((e) => e !== s);
+  const r = others[Math.floor(rng() * others.length)];
+  const [ax, ay] = edgeCell(s, w, h, rng);
+  const [bx, by] = edgeCell(r, w, h, rng);
+  if (ax === bx && ay === by) return null;
+  const path: Array<[number, number]> = [[ax, ay]];
+  let x = ax;
+  let y = ay;
+  let remX = bx - ax;
+  let remY = by - ay;
+  const sx = Math.sign(remX);
+  const sy = Math.sign(remY);
   let guard = 0;
-  while (jogAt.size < jogCount && guard++ < 20) {
-    const col = Math.min(sx, tx) + 1 + Math.floor(rng() * Math.max(1, span - 1));
-    // Never jog right at the start: source outlet (right) always matches.
-    if (col !== sx + dx0 && col !== tx) jogAt.add(col);
-  }
-  const dx = tx > sx ? 1 : -1;
-  while (x !== tx) {
-    const nx = x + dx;
-    if (jogAt.has(nx) && y !== ty) {
-      y += ty > y ? 1 : -1;
-      if (y < 0 || y >= h) return null;
-      path.push([x, y]);
+  while ((remX !== 0 || remY !== 0) && guard++ < w * h * 4) {
+    const canX = remX !== 0;
+    const canY = remY !== 0;
+    const goX = canX && (!canY || rng() < 0.5);
+    const run = 1 + Math.floor(rng() * 2);
+    if (goX) {
+      for (let k = 0; k < run && remX !== 0; k++) {
+        x += sx;
+        remX -= sx;
+        path.push([x, y]);
+      }
+    } else {
+      for (let k = 0; k < run && remY !== 0; k++) {
+        y += sy;
+        remY -= sy;
+        path.push([x, y]);
+      }
     }
-    x = nx;
-    path.push([x, y]);
   }
-  while (y !== ty) {
-    y += ty > y ? 1 : -1;
-    if (y < 0 || y >= h) return null;
-    path.push([x, y]);
-  }
-  return path;
+  return path.length >= 3 ? path : null;
 }
 
 interface Built {
@@ -230,15 +251,13 @@ function buildPath(
   rng: () => number, opts: GenOptions, color: string, recvColor: string, spare: number,
   recvKind: 'auto' | 'overflow' | 'exact' | 'buffer', family: Family = 'path',
 ): LevelDefinition | null {
-  const sy = Math.floor(rng() * h);
-  const ry = Math.floor(rng() * h);
-  const path = manhattanPath(w, h, 0, sy, w - 1, ry, rng);
+  const path = routePath(w, h, rng);
   if (!path || path.length < 3) return null;
   const laid = layPath(w, h, path);
   if (!laid) return null;
   const { cells, pathSet, interior } = laid;
-  const sourceCell = idx(0, sy, w);
-  const receiverCell = idx(w - 1, ry, w);
+  const sourceCell = idx(path[0][0], path[0][1], w);
+  const receiverCell = idx(path[path.length - 1][0], path[path.length - 1][1], w);
   cells[sourceCell] = { kind: 'source', rot: 0 };
   cells[receiverCell] = { kind: 'receiver', rot: 0 };
   // Aim source outlet along the first step and receiver inlet against the last.
@@ -336,32 +355,42 @@ function buildFilter(
 }
 
 function buildMixer(puzzleId: string, seed: number, mode: 'child' | 'normal' | 'expert', rng: () => number): LevelDefinition | null {
-  // Fixed 4x3 layout, scrambled distractors only (deterministic shape).
-  const w = 4;
-  const h = 3;
+  // §4 diversity: same mechanic (red + blue → mixer → purple receiver) but the
+  // grid size, mixer row and link length vary instead of one fixed 4x3 shape.
+  const w = rng() < 0.5 ? 4 : 5;
+  const h = rng() < 0.5 ? 3 : 4;
+  const my = 1 + Math.floor(rng() * (h - 2));
+  const mixerX = 1;
   const cells: CellDef[] = Array.from({ length: w * h }, () => ({ kind: 'empty' as const, rot: 0 }));
-  // Red source (0,1) -> mixer (1,1); blue source (1,0) outlet down; mixer -> (2,1) -> receiver (3,1).
-  cells[idx(0, 1, w)] = { kind: 'source', rot: 0 };
-  cells[idx(1, 0, w)] = { kind: 'source', rot: 1 }; // outlet down
-  cells[idx(1, 1, w)] = { kind: 'mixer', rot: 0, recipeIn: { red: 1, blue: 1 }, recipeOut: { color: 'purple', count: 2 } };
-  cells[idx(2, 1, w)] = { kind: 'straight', rot: 1 };
-  cells[idx(3, 1, w)] = { kind: 'receiver', rot: 0 };
+  const redSrc = idx(0, my, w);
+  const blueSrc = idx(mixerX, my - 1, w);
+  const mixerCell = idx(mixerX, my, w);
+  const recvCell = idx(w - 1, my, w);
+  cells[redSrc] = { kind: 'source', rot: 0 }; // outlet right into the mixer
+  cells[blueSrc] = { kind: 'source', rot: 1 }; // outlet down into the mixer
+  cells[mixerCell] = { kind: 'mixer', rot: 0, recipeIn: { red: 1, blue: 1 }, recipeOut: { color: 'purple', count: 2 } };
+  // Link pipes mixer → receiver, scrambled to vertical; witness turns each flat.
+  const linkIdx: number[] = [];
+  for (let x = mixerX + 1; x <= w - 2; x++) {
+    const ci = idx(x, my, w);
+    cells[ci] = { kind: 'straight', rot: 0 };
+    linkIdx.push(ci);
+  }
+  cells[recvCell] = { kind: 'receiver', rot: 0 };
   const goal = mode === 'child' ? 2 : 4;
   const def: LevelDefinition = {
     ...baseDef(puzzleId, seed, mode, 'mixer', w, h),
     cells,
     sources: [
-      { cell: idx(0, 1, w), color: 'red', portions: goal / 2 + 1 },
-      { cell: idx(1, 0, w), color: 'blue', portions: goal / 2 + 1 },
+      { cell: redSrc, color: 'red', portions: goal / 2 + 1 },
+      { cell: blueSrc, color: 'blue', portions: goal / 2 + 1 },
     ],
-    receivers: [{ cell: idx(3, 1, w), color: 'purple', goal }],
-    solutionWitness: [{ type: 'rotate', index: idx(2, 1, w) }],
-    difficultyEvidence: { pathLength: 5, rotatable: 1, branches: 2 },
-    par: 1,
+    receivers: [{ cell: recvCell, color: 'purple', goal }],
+    solutionWitness: linkIdx.map((i) => ({ type: 'rotate', index: i } as PlumberCommand)),
+    difficultyEvidence: { pathLength: 3 + linkIdx.length, rotatable: linkIdx.length, branches: 2 },
+    par: linkIdx.length,
   };
-  // Scramble the link pipe.
-  def.cells[idx(2, 1, w)] = { kind: 'straight', rot: 0 };
-  const used = new Set([idx(0, 1, w), idx(1, 0, w), idx(1, 1, w), idx(2, 1, w), idx(3, 1, w)]);
+  const used = new Set([redSrc, blueSrc, mixerCell, recvCell, ...linkIdx]);
   addDistractors(cells, used, rng, 0);
   return def;
 }
@@ -477,6 +506,29 @@ export function winsWithoutWitness(def: LevelDefinition): boolean {
   if (s.program.length === 0 && s.def.program) s.program = s.def.program.map((c) => ({ ...c }));
   if (!applyCommand(s, { type: 'start' })) return false;
   return runToEnd(s) === 'WON';
+}
+
+/**
+ * §4 logical fingerprint: the actual pipe connectivity (per-cell open sides at
+ * the solved rotation) plus source/receiver roles. Two levels that only differ
+ * by orientation or route are distinct here, so diversity checks cannot be
+ * fooled by a kind-grid that ignores pipe direction.
+ */
+export function logicalFingerprint(def: LevelDefinition): string {
+  const sides = ['top', 'right', 'bottom', 'left'] as const;
+  const grid = def.cells
+    .map((c) => {
+      const p = portsOf(c, c.rot);
+      return sides.map((s) => (p[s] ? '1' : '0')).join('');
+    })
+    .join('|');
+  const io = [
+    ...def.sources.map((s) => `S${s.cell}:${s.color}:${s.portions}`),
+    ...def.receivers.map((r) => `R${r.cell}:${r.color}:${r.goal}:${r.kind ?? 'auto'}`),
+  ]
+    .sort()
+    .join(',');
+  return `${def.gridW}x${def.gridH}|${def.family}|${grid}|${io}`;
 }
 
 function fallbackLevel(puzzleId: string, seed: number, mode: 'child' | 'normal' | 'expert'): LevelDefinition {

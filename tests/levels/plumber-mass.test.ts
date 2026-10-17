@@ -8,7 +8,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { createRuntime, runToEnd, applyCommand, totalVolume, type LevelDefinition } from '../../src/games/plumber/domain/model';
-import { generateLevel, certifySolvable, winsWithoutWitness, type Family } from '../../src/games/plumber/domain/generator';
+import { generateLevel, certifySolvable, winsWithoutWitness, logicalFingerprint, type Family } from '../../src/games/plumber/domain/generator';
 
 const MODES = ['child', 'normal', 'expert'] as const;
 const PER_MODE = 1500;
@@ -22,13 +22,26 @@ interface Metrics {
   nontrivialFails: number;
   determinismFails: number;
   fingerprints: Map<string, number>;
+  logical: Map<string, number>;
+  edges: Map<string, number>;
   parSum: number;
   parMax: number;
   bySize: Map<string, number>;
 }
 
 function newMetrics(): Metrics {
-  return { total: 0, fallback: 0, unsolvable: 0, nontrivialFails: 0, determinismFails: 0, fingerprints: new Map(), parSum: 0, parMax: 0, bySize: new Map() };
+  return { total: 0, fallback: 0, unsolvable: 0, nontrivialFails: 0, determinismFails: 0, fingerprints: new Map(), logical: new Map(), edges: new Map(), parSum: 0, parMax: 0, bySize: new Map() };
+}
+
+/** Which grid edge a cell index sits on (for route-direction diversity). */
+function edgeOf(index: number, w: number, h: number): string {
+  const x = index % w;
+  const y = Math.floor(index / w);
+  if (x === 0) return 'left';
+  if (x === w - 1) return 'right';
+  if (y === 0) return 'top';
+  if (y === h - 1) return 'bottom';
+  return 'inner';
 }
 
 /** Canonical positional fingerprint: the same layout family/size/kind grid. */
@@ -50,6 +63,13 @@ function check(def: LevelDefinition, m: Metrics): void {
   m.bySize.set(size, (m.bySize.get(size) ?? 0) + 1);
   const fp = fingerprint(def);
   m.fingerprints.set(fp, (m.fingerprints.get(fp) ?? 0) + 1);
+  const lf = logicalFingerprint(def);
+  m.logical.set(lf, (m.logical.get(lf) ?? 0) + 1);
+  const pair = def.sources
+    .map((s) => edgeOf(s.cell, def.gridW, def.gridH))
+    .sort()
+    .join('+') + '>' + def.receivers.map((r) => edgeOf(r.cell, def.gridW, def.gridH)).sort().join('+');
+  m.edges.set(pair, (m.edges.get(pair) ?? 0) + 1);
 }
 
 function replay(def: LevelDefinition): void {
@@ -64,6 +84,7 @@ function replay(def: LevelDefinition): void {
 function writeReport(m: Metrics, extra: Record<string, unknown>): void {
   const distinct = m.fingerprints.size;
   const duplicates = [...m.fingerprints.values()].filter((n) => n > 1).length;
+  const logicalDistinct = m.logical.size;
   const report = {
     levelsChecked: m.total,
     fallback: m.fallback,
@@ -73,6 +94,9 @@ function writeReport(m: Metrics, extra: Record<string, unknown>): void {
     distinctFingerprints: distinct,
     overlappingFingerprints: duplicates,
     overlapRate: Number((duplicates / Math.max(1, distinct)).toFixed(4)),
+    distinctLogicalFingerprints: logicalDistinct,
+    logicalOverlapRate: Number(((m.total - logicalDistinct) / Math.max(1, m.total)).toFixed(4)),
+    routeEdgePairs: Object.fromEntries([...m.edges.entries()].sort((a, b) => b[1] - a[1])),
     meanPar: Number((m.parSum / Math.max(1, m.total)).toFixed(3)),
     maxPar: m.parMax,
     sizeDistribution: Object.fromEntries([...m.bySize.entries()].sort()),
@@ -134,5 +158,43 @@ describe('plumber mass: families', () => {
     const distinct = m.fingerprints.size;
     const overlap = 1 - distinct / m.total;
     expect(overlap).toBeLessThan(0.2);
+    // §4 direction variety: routes must not all start/end on the same edge pair.
+    expect(m.edges.size).toBeGreaterThanOrEqual(4);
   });
+});
+
+describe('§4 diversity sample (20 levels per mode)', () => {
+  it('writes a visual sample and proves route + layout variety', () => {
+    const SAMPLE = 20;
+    const rows: Array<Record<string, unknown>> = [];
+    for (const mode of MODES) {
+      const seenEdges = new Set<string>();
+      const seenLogical = new Set<string>();
+      for (let level = 1; level <= SAMPLE; level++) {
+        const id = `diversity-${mode}-${level}`;
+        const def = generateLevel(id, (level * 2654435761) >>> 0, { mode });
+        expect(certifySolvable(def)).toBe(true);
+        const srcEdge = def.sources.map((s) => edgeOf(s.cell, def.gridW, def.gridH)).sort().join('+');
+        const recvEdge = def.receivers.map((r) => edgeOf(r.cell, def.gridW, def.gridH)).sort().join('+');
+        seenEdges.add(`${srcEdge}>${recvEdge}`);
+        seenLogical.add(logicalFingerprint(def));
+        rows.push({
+          mode,
+          level,
+          family: def.family,
+          grid: `${def.gridW}x${def.gridH}`,
+          sourceEdges: srcEdge,
+          receiverEdges: recvEdge,
+          par: def.par ?? def.solutionWitness.filter((c) => c.type === 'rotate').length,
+          logicalFingerprint: logicalFingerprint(def),
+        });
+      }
+      // Each mode must show several distinct start→end edge directions.
+      expect(seenEdges.size).toBeGreaterThanOrEqual(3);
+      // And near-all layouts distinct (logical, orientation-aware).
+      expect(seenLogical.size).toBeGreaterThanOrEqual(SAMPLE - 1);
+    }
+    mkdirSync('evidence', { recursive: true });
+    writeFileSync('evidence/plumber-diversity-sample.json', `${JSON.stringify({ samplePerMode: SAMPLE, rows }, null, 2)}\n`);
+  }, 120000);
 });

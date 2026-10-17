@@ -80,10 +80,13 @@ describe('§16 dev editor: certify gate + batch diagnostics', () => {
     const pathCell = good.solutionWitness.find((c) => c.type === 'rotate');
     expect(pathCell).toBeDefined();
     const broken = removeObject(good, pathCell && 'index' in pathCell ? pathCell.index : 0);
-    const brokenCheck = checkDraft(broken, diagnose);
+    // A bounded solver budget is enough here: the draft is already not publicly
+    // valid because its witness no longer wins, and the proof of unsolvability
+    // otherwise burns the full 200k-node budget (~10s+) on a negative result.
+    const brokenCheck = checkDraft(broken, (d) => diagnose(d, 40000));
     expect(brokenCheck.ok).toBe(false);
     expect(brokenCheck.reasons.length).toBeGreaterThan(0);
-  });
+  }, 40000);
 
   it('editor ops produce new defs without mutating the input', () => {
     const def = generateLevel('dev-editor2', 111, { mode: 'normal' });

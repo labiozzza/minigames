@@ -195,7 +195,9 @@ export interface RuntimeState {
 
 export const SCHEMA_VERSION = 1;
 export const RULESET_VERSION = 'plumber-rules/2';
-export const GENERATOR_VERSION = 'plumber-gen/0.2-stage3';
+// §4: bumped to a new namespace when path/mixer diversity landed. Levels issued
+// under an older version keep their own stored definition and still replay.
+export const GENERATOR_VERSION = 'plumber-gen/0.3-diverse';
 /** Per-pipe capacity (portions). Receivers are sinks with capacity = goal. */
 export const PIPE_CAPACITY = 4;
 export const MAX_TICKS = 1000;
