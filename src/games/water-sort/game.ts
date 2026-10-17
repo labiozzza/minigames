@@ -482,6 +482,15 @@ export class WaterSortGame implements GameHandle {
     ws.maxLevel = Math.max(ws.maxLevel, this.level + 1);
     ws.active = null;
     this.ctx.save.lastPlayed = { gameId: 'water-sort', levelNumber: this.level };
+    this.ctx.progress?.win({
+      gameId: 'water-sort',
+      puzzleId: `water-sort-${this.level}`,
+      rulesetVersion: this.puzzle.balanceVersion,
+      generatorVersion: this.puzzle.generatorVersion,
+      level: this.level,
+      mode: 'normal',
+      stars: 1,
+    });
     void this.persist();
     this.ctx.onProgress();
     if (firstWinEver) window.dispatchEvent(new CustomEvent('mg:first-win'));

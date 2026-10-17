@@ -33,6 +33,7 @@ export const ru = {
   'levels.locked': 'Закрыт',
   'levels.page': 'Страница {a}–{b}',
   'settings.title': 'Настройки',
+  'account.title': 'Аккаунт и синхронизация',
   'settings.theme': 'Тема',
   'settings.themeSystem': 'Системная',
   'settings.themeLight': 'Светлая',

@@ -16,6 +16,8 @@ export interface ServerOptions {
   exposeCodes?: boolean;
   /** Max request body in bytes (default 64 KiB). */
   maxBody?: number;
+  /** Allowed CORS origin for local dev/E2E ('*' or explicit). null disables. */
+  cors?: string | null;
 }
 
 interface Ctx {
@@ -33,6 +35,19 @@ function send(res: ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body);
   res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(text) });
   res.end(text);
+}
+
+function corsHeaders(origin: string | null, allow: string | null): Record<string, string> {
+  if (!allow) return {};
+  const value = allow === '*' ? '*' : origin && origin === allow ? allow : '';
+  if (!value) return {};
+  return {
+    'Access-Control-Allow-Origin': value,
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+    'Access-Control-Max-Age': '600',
+    Vary: 'Origin',
+  };
 }
 
 function readJson(req: IncomingMessage, maxBody: number): Promise<unknown> {
@@ -83,7 +98,14 @@ export function createApp(opts: ServerOptions = {}): { server: Server; auth: Aut
   const auth = new AuthService(store, { now, exposeCodes: opts.exposeCodes ?? false });
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+    const origin = typeof req.headers.origin === 'string' ? req.headers.origin : null;
+    for (const [k, v] of Object.entries(corsHeaders(origin, opts.cors ?? null))) res.setHeader(k, v);
     try {
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
       const url = new URL(req.url ?? '/', 'http://localhost');
       const method = req.method ?? 'GET';
       const body = (method === 'POST' || method === 'PUT') ? await readJson(req, maxBody) : {};

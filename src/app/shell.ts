@@ -13,6 +13,9 @@ import { isLang, translate, type Lang } from '../platform/i18n';
 import { getGame, type GameContext, type GameHandle } from '../platform/games/registry';
 import { button, el, modal, toast } from '../platform/ui/ui';
 import { applyUpdate, canInstall, isInstalled, promptInstall } from '../platform/pwa/pwa';
+import { SyncEngine } from '../platform/sync/engine';
+import { getStatus, subscribeStatus, type SyncStatus } from '../platform/sync/status';
+import { isSignedIn, getGuestId } from '../platform/auth/session';
 
 export class Shell {
   private app: HTMLElement;
@@ -25,6 +28,8 @@ export class Shell {
   private toastRoot!: HTMLElement;
   private bannerRoot!: HTMLElement;
   private updateAvailable = false;
+  private engine!: SyncEngine;
+  private statusEl: HTMLElement | null = null;
 
   constructor(app: HTMLElement) {
     this.app = app;
@@ -45,6 +50,10 @@ export class Shell {
     this.toastRoot = el('div', 'toast-root');
     this.bannerRoot = el('div', 'banner-root');
     document.body.append(this.toastRoot, this.bannerRoot);
+    this.engine = new SyncEngine({ save: this.save, persist: () => this.persist(), games: ['water-sort', 'plumber'] });
+    subscribeStatus((s) => this.renderStatus(s));
+    void this.engine.init();
+    this.exposeTestApi();
     this.bindEvents();
     this.renderCatalog();
     this.checkUpdateBanner();
@@ -52,6 +61,24 @@ export class Shell {
 
   private applyTheme(): void {
     document.documentElement.dataset.theme = resolveTheme(this.settings);
+  }
+
+  /** Test/dev-only introspection. Absent in release builds. */
+  private exposeTestApi(): void {
+    if (!(import.meta.env.DEV || import.meta.env.VITE_TEST_HOOKS === '1')) return;
+    (window as unknown as { __MG_TEST__?: unknown }).__MG_TEST__ = {
+      save: () => JSON.parse(JSON.stringify(this.save)) as SaveData,
+      status: () => getStatus(),
+      guestId: () => getGuestId(),
+      conflicts: () => Object.keys(this.save.conflicts ?? {}),
+      syncNow: () => this.engine.fullSync(),
+      logout: () => { this.engine.logout(); },
+      login: async (email: string) => {
+        const r = await this.engine.requestOtp(email);
+        if (!r.code) return false;
+        return this.engine.login(email, r.code);
+      },
+    };
   }
 
   private async persist(): Promise<void> {
@@ -62,8 +89,8 @@ export class Shell {
   private bindEvents(): void {
     window.addEventListener('mg:exit-catalog', () => void this.exitToCatalog());
     window.addEventListener('mg:play-level', (e) => {
-      const d = (e as CustomEvent).detail as { gameId: string; level: number };
-      void this.playGame(d.gameId, d.level);
+      const d = (e as CustomEvent).detail as { gameId: string; level: number; mode?: string };
+      void this.playGame(d.gameId, d.level, d.mode);
     });
     window.addEventListener('mg:open-settings', () => this.openSettings());
     window.addEventListener('mg:first-win', () => this.maybeOfferInstall());
@@ -87,9 +114,16 @@ export class Shell {
     const wrap = el('div', 'catalog');
     const head = el('header', 'catalog-head');
     head.append(el('h1', 'app-title', this.t('app.name')), el('p', 'app-tagline', this.t('app.tagline')));
-    const gear = button('⚙', 'icon-btn', () => this.openSettings(), this.t('settings.title'));
-    head.appendChild(gear);
+    const headActions = el('div', 'head-actions');
+    const status = el('button', 'sync-pill', '') as HTMLButtonElement;
+    status.setAttribute('type', 'button');
+    status.addEventListener('click', () => this.openAccount());
+    this.statusEl = status;
+    headActions.append(status, button('👤', 'icon-btn', () => this.openAccount(), this.t('account.title')));
+    headActions.appendChild(button('⚙', 'icon-btn', () => this.openSettings(), this.t('settings.title')));
+    head.appendChild(headActions);
     wrap.appendChild(head);
+    this.renderStatus(getStatus());
 
     const lp = this.save.lastPlayed;
     if (lp && getGame(lp.gameId)) {
@@ -150,7 +184,7 @@ export class Shell {
     this.renderCatalog();
   }
 
-  async playGame(gameId: string, level: number): Promise<void> {
+  async playGame(gameId: string, level: number, mode?: string): Promise<void> {
     const mod = getGame(gameId);
     if (!mod) return;
     this.gameId = gameId;
@@ -169,7 +203,9 @@ export class Shell {
       lang: this.lang,
       audio: undefined as never,
       level,
+      mode,
       dev: import.meta.env.DEV,
+      progress: this.engine,
       persist: () => this.persist(),
       t: (k, v) => this.t(k, v),
       onExit: () => void this.exitToCatalog(),
@@ -189,6 +225,128 @@ export class Shell {
 
   private renderCatalogBadges(): void {
     // Cheap refresh hook after progress events; full re-render happens on exit.
+  }
+
+  // ---------- Account & sync ----------
+
+  private syncLabel(s: SyncStatus): { text: string; cls: string } {
+    const ru = this.lang === 'ru';
+    switch (s.state) {
+      case 'local': return { text: ru ? 'Локально' : 'Local', cls: 'local' };
+      case 'guest': return { text: ru ? 'Гость' : 'Guest', cls: 'guest' };
+      case 'pending': return { text: ru ? `Ждёт синхр. (${s.pending})` : `Pending (${s.pending})`, cls: 'pending' };
+      case 'syncing': return { text: ru ? 'Синхронизация…' : 'Syncing…', cls: 'syncing' };
+      case 'synced': return { text: ru ? 'Синхронизировано' : 'Synced', cls: 'synced' };
+      case 'conflict': return { text: ru ? 'Конфликт' : 'Conflict', cls: 'conflict' };
+      case 'offline': return { text: ru ? `Офлайн (${s.pending})` : `Offline (${s.pending})`, cls: 'offline' };
+      default: return { text: ru ? 'Ошибка синхр.' : 'Sync error', cls: 'error' };
+    }
+  }
+
+  private renderStatus(s: SyncStatus): void {
+    if (!this.statusEl) return;
+    if (!this.engine?.enabled) {
+      this.statusEl.style.display = 'none';
+      return;
+    }
+    const { text, cls } = this.syncLabel(s);
+    this.statusEl.textContent = text;
+    this.statusEl.className = `sync-pill ${cls}`;
+    this.statusEl.style.display = '';
+  }
+
+  openAccount(): void {
+    const { box, close } = modal(this.app, 'account');
+    box.append(el('h2', '', this.t('account.title')));
+    if (!this.engine.enabled) {
+      box.append(el('p', 'muted', this.lang === 'ru'
+        ? 'Облачный аккаунт не настроен: игра работает локально и офлайн. Прогресс хранится на устройстве.'
+        : 'Cloud account is not configured: the game runs locally and offline. Progress is stored on this device.'));
+      const row0 = el('div', 'modal-row');
+      row0.append(button(this.t('settings.close'), 'btn primary', () => close(), 'close'));
+      box.appendChild(row0);
+      return;
+    }
+    const signed = isSignedIn();
+    const status = getStatus();
+    box.append(el('p', 'muted', `${this.syncLabel(status).text}${signed && status.user?.email ? ` · ${status.user.email}` : ''}`));
+
+    const conflicts = Object.keys(this.save.conflicts ?? {});
+    if (conflicts.length) {
+      const cbox = el('div', 'conflict-box');
+      cbox.append(el('h3', '', this.lang === 'ru' ? 'Незавершённые головоломки конфликтуют' : 'Unfinished puzzles conflict'));
+      for (const gid of conflicts) {
+        const line = el('div', 'conflict-row');
+        line.append(el('span', '', `${gid}: ${this.lang === 'ru' ? 'сохранены обе версии' : 'both versions kept'}`));
+        line.append(button(this.lang === 'ru' ? 'Моя' : 'Mine', 'btn', () => { void this.resolveConflict(gid, 'local'); close(); }, 'keep local'));
+        line.append(button(this.lang === 'ru' ? 'Серверная' : 'Server', 'btn', () => { void this.resolveConflict(gid, 'remote'); close(); }, 'keep remote'));
+        cbox.appendChild(line);
+      }
+      box.appendChild(cbox);
+    }
+
+    if (!signed) {
+      const email = document.createElement('input');
+      email.type = 'email';
+      email.placeholder = 'you@example.com';
+      email.className = 'account-input';
+      const code = document.createElement('input');
+      code.type = 'text';
+      code.inputMode = 'numeric';
+      code.placeholder = this.lang === 'ru' ? 'Код из письма' : 'Emailed code';
+      code.className = 'account-input';
+      box.append(email, code);
+      const row = el('div', 'modal-row');
+      let codeSent = false;
+      row.append(
+        button(this.lang === 'ru' ? 'Получить код' : 'Get code', 'btn', () => {
+          const v = email.value.trim();
+          if (!v) return;
+          void this.engine.requestOtp(v).then((r) => {
+            codeSent = true;
+            if (r.code) {
+              // Test builds only: the backend reveals the code so E2E can log in.
+              code.value = r.code;
+              toast(this.toastRoot, `code ${r.code}`);
+            } else {
+              toast(this.toastRoot, this.lang === 'ru' ? 'Код отправлен' : 'Code sent');
+            }
+          }).catch(() => toast(this.toastRoot, this.lang === 'ru' ? 'Не удалось' : 'Failed'));
+        }, 'request code'),
+        button(this.lang === 'ru' ? 'Войти' : 'Sign in', 'btn primary', () => {
+          if (!codeSent) return;
+          void this.engine.login(email.value.trim(), code.value.trim()).then((ok) => {
+            if (ok) { close(); this.renderCatalog(); toast(this.toastRoot, this.lang === 'ru' ? 'Вход выполнен' : 'Signed in'); }
+            else toast(this.toastRoot, this.lang === 'ru' ? 'Неверный код' : 'Invalid code');
+          });
+        }, 'verify'),
+      );
+      box.appendChild(row);
+      box.append(el('p', 'muted', this.lang === 'ru'
+        ? 'Гостевой прогресс привяжется к аккаунту при входе.'
+        : 'Guest progress is linked to the account on sign-in.'));
+    } else {
+      const row = el('div', 'modal-row');
+      row.append(
+        button(this.lang === 'ru' ? 'Синхронизировать' : 'Sync now', 'btn', () => { void this.engine.fullSync().then(() => this.renderStatus(getStatus())); }, 'sync now'),
+        button(this.lang === 'ru' ? 'Выйти' : 'Sign out', 'btn', () => { this.engine.logout(); close(); this.renderCatalog(); }, 'sign out'),
+        button(this.t('settings.close'), 'btn primary', () => close(), 'close'),
+      );
+      box.appendChild(row);
+    }
+  }
+
+  private async resolveConflict(gameId: string, choice: 'local' | 'remote'): Promise<void> {
+    const c = this.save.conflicts?.[gameId];
+    if (!c) return;
+    if (choice === 'remote') {
+      const g = this.save.games[gameId] as { active?: unknown } | undefined;
+      if (g) g.active = c.remote;
+    }
+    delete this.save.conflicts![gameId];
+    if (Object.keys(this.save.conflicts!).length === 0) delete this.save.conflicts;
+    await this.persist();
+    this.renderCatalog();
   }
 
   // ---------- Settings ----------

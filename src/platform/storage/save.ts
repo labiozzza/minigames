@@ -36,6 +36,8 @@ export interface SaveData {
   settings: Settings;
   games: Record<string, GameSave>;
   lastPlayed: { gameId: string; levelNumber: number } | null;
+  /** Unresolved sync conflicts: keep BOTH snapshots, never silently overwrite. */
+  conflicts?: Record<string, { local: unknown; remote: unknown; at: number }>;
   updatedAt: number;
 }
 
@@ -350,6 +352,16 @@ export function sanitizeSave(raw: unknown): SaveData | null {
     save.lastPlayed = { gameId: lp.gameId, levelNumber: Math.max(1, Math.floor(lp.levelNumber)) };
   }
   if (typeof o.updatedAt === 'number') save.updatedAt = o.updatedAt;
+  const conflicts = o.conflicts;
+  if (conflicts && typeof conflicts === 'object' && !hasProtoKey(conflicts)) {
+    const out: Record<string, { local: unknown; remote: unknown; at: number }> = {};
+    for (const [gid, c] of Object.entries(conflicts as Record<string, unknown>)) {
+      if (!/^[a-z0-9-]{1,32}$/.test(gid) || !c || typeof c !== 'object') continue;
+      const co = c as Record<string, unknown>;
+      out[gid] = { local: co.local ?? null, remote: co.remote ?? null, at: typeof co.at === 'number' ? co.at : 0 };
+    }
+    if (Object.keys(out).length) save.conflicts = out;
+  }
   return save;
 }
 
@@ -464,8 +476,79 @@ export function mergeSaves(current: SaveData, incoming: SaveData): SaveData {
   return out;
 }
 
-export async function backupCurrent(): Promise<void> {
-  const raw = await kvGet(SAVE_KEY);
+const numMap = (v: unknown): Record<string, number> => {
+  const out: Record<string, number> = {};
+  if (v && typeof v === 'object') {
+    for (const [k, n] of Object.entries(v as Record<string, unknown>)) {
+      if (typeof n === 'number' && Number.isFinite(n)) out[k] = n;
+    }
+  }
+  return out;
+};
+
+/**
+ * Monotonic merge of a server snapshot into the local save for one game.
+ * Wins -> union of completed levels; stars -> per-key max; collections/fams ->
+ * union; dailies -> per-day max; stats -> per-mode max (counters only ever grow,
+ * and the server counts each event uuid once, so max cannot double-count).
+ * It NEVER touches the local active session: conflicting actives are preserved
+ * separately and surfaced to the user.
+ */
+export function mergeServerSnapshot(save: SaveData, gameId: string, serverData: Record<string, unknown>): void {
+  const g = (save.games[gameId] ?? (gameId === 'plumber' ? emptyPlumber() : emptyWaterSort())) as GameSave & Record<string, unknown>;
+  const completed = new Set<number>([
+    ...(((g.completed as number[]) ?? []).filter((n) => typeof n === 'number')),
+    ...((Array.isArray(serverData.completed) ? (serverData.completed as unknown[]) : []).filter((n): n is number => typeof n === 'number')),
+  ]);
+  g.completed = [...completed].sort((a, b) => a - b);
+  if (typeof serverData.maxLevel === 'number') {
+    g.maxLevel = Math.max(Number(g.maxLevel) || 1, Math.floor(serverData.maxLevel));
+  }
+  if (serverData.stars && typeof serverData.stars === 'object') {
+    const local = (g.stars as Record<string, number>) ?? {};
+    for (const [k, v] of Object.entries(numMap(serverData.stars))) local[k] = Math.max(local[k] ?? 0, v);
+    g.stars = local;
+  }
+  if (Array.isArray(serverData.collections)) {
+    g.collections = [...new Set([...((g.collections as string[]) ?? []), ...(serverData.collections as unknown[]).filter((x): x is string => typeof x === 'string')])];
+  }
+  if (serverData.fams && typeof serverData.fams === 'object') {
+    const local = (g.fams as Record<string, unknown>) ?? {};
+    for (const [k, v] of Object.entries(serverData.fams as Record<string, unknown>)) {
+      if (!(k in local) && v && typeof v === 'object') local[k] = v;
+    }
+    g.fams = local;
+  }
+  if (serverData.dailies && typeof serverData.dailies === 'object') {
+    const local = (g.dailies as Record<string, number>) ?? {};
+    for (const [k, v] of Object.entries(numMap(serverData.dailies))) local[k] = Math.max(local[k] ?? 0, v);
+    g.dailies = local;
+  }
+  const srvStats = serverData.stats;
+  if (srvStats && typeof srvStats === 'object') {
+    const local = ((g.stats as Record<string, PlumberModeStats>) ?? {}) as Record<string, PlumberModeStats>;
+    for (const m of ['child', 'normal', 'expert'] as const) {
+      const sn = (srvStats as Record<string, unknown>)[m];
+      if (!sn || typeof sn !== 'object') continue;
+      const cur = local[m] ?? { attempts: 0, wins: 0, hints: 0, skips: 0 };
+      for (const k of ['attempts', 'wins', 'hints', 'skips'] as const) {
+        const sv = (sn as Record<string, unknown>)[k];
+        if (typeof sv === 'number') cur[k] = Math.max(cur[k] ?? 0, Math.floor(sv));
+      }
+      local[m] = cur;
+    }
+    g.stats = local as PlumberSave['stats'];
+  }
+  save.games[gameId] = g as GameSave;
+}
+
+/** Record both snapshots of an unresolved active-session conflict. */
+export function recordConflict(save: SaveData, gameId: string, local: unknown, remote: unknown): void {
+  save.conflicts = save.conflicts ?? {};
+  save.conflicts[gameId] = { local, remote, at: Date.now() };
+}
+
+export async function backupCurrent(): Promise<void> {  const raw = await kvGet(SAVE_KEY);
   if (raw !== null) await kvSet(BACKUP_KEY, raw);
 }
 

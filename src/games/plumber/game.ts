@@ -422,6 +422,7 @@ export class PlumberGame implements GameHandle {
     applyCommand(this.state, { type: 'markHint' });
     const slot = this.slot;
     slot.stats[this.def.mode].hints += 1;
+    this.ctx.progress?.stats({ gameId: PLUMBER_ID, puzzleId: this.def.puzzleId, rulesetVersion: RULESET_VERSION, generatorVersion: GENERATOR_VERSION, mode: this.def.mode, delta: { hints: 1 } });
     const hint = hintFromWitness(this.def, this.state.rots);
     if (hint && hint.type === 'rotate') {
       this.hintCell = hint.index;
@@ -440,6 +441,7 @@ export class PlumberGame implements GameHandle {
       this.bannerEl.hidden = true;
       if (this.state.phase === 'PREPARING' && this.state.tick === 0) {
         this.slot.stats[this.def.mode].attempts += 1;
+        this.ctx.progress?.stats({ gameId: PLUMBER_ID, puzzleId: this.def.puzzleId, rulesetVersion: RULESET_VERSION, generatorVersion: GENERATOR_VERSION, mode: this.def.mode, delta: { attempts: 1 } });
       }
       if (applyCommand(this.state, { type: 'start' })) {
         this.audio.pour(0.4);
@@ -511,6 +513,15 @@ export class PlumberGame implements GameHandle {
     if (fresh.length > 0) {
       slot.collections.push(...fresh);
       toast(this.toastRoot!, `${this.ctx.t('plumber.album')} +${fresh.length}`);
+    }
+    const sink = this.ctx.progress;
+    if (sink && !this.sharedLevel) {
+      if (this.dailyLevel) {
+        sink.daily({ gameId: PLUMBER_ID, puzzleId: this.def.puzzleId, rulesetVersion: RULESET_VERSION, generatorVersion: GENERATOR_VERSION, day: this.dailyLevel.day, stars, mode });
+      } else {
+        sink.win({ gameId: PLUMBER_ID, puzzleId: this.def.puzzleId, rulesetVersion: RULESET_VERSION, generatorVersion: GENERATOR_VERSION, level: this.level, mode, stars, family: this.def.family, collections: fresh });
+      }
+      sink.stats({ gameId: PLUMBER_ID, puzzleId: this.def.puzzleId, rulesetVersion: RULESET_VERSION, generatorVersion: GENERATOR_VERSION, mode, delta: { wins: 1 } });
     }
     this.ctx.save.lastPlayed = { gameId: PLUMBER_ID, levelNumber: this.level + 1 };
     this.bannerEl.textContent = `${this.ctx.t('plumber.won')} ${'★'.repeat(stars)}`;

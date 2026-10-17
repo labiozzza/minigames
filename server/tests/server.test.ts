@@ -21,7 +21,7 @@ async function api(path: string, init?: RequestInit): Promise<{ status: number; 
 const AUTH = (t: string) => ({ Authorization: `Bearer ${t}` });
 
 beforeAll(async () => {
-  const app = createApp({ store: new MemoryStore(), exposeCodes: true });
+  const app = createApp({ store: new MemoryStore(), exposeCodes: true, cors: '*' });
   server = app.server;
   auth = app.auth;
   store = app.store;
@@ -228,5 +228,55 @@ describe('config, admin, telemetry', () => {
     await store.putSession({ tokenHash: hashSecret('expiredtok'), userId: 'x', role: 'player', expiresAt: Date.now() - 1000 });
     const exp = await api('/me', { headers: AUTH('expiredtok') });
     expect(exp.status).toBe(401);
+  });
+});
+
+describe('sync: idempotency, stats merge, CORS, test-only OTP', () => {
+  it('resending the same event uuid never double-counts wins', async () => {
+    const token = await login('idem@example.com');
+    const ev = { uuid: 'u-fixed-1', kind: 'win', level: 3, stars: 2, mode: 'normal', family: 'valve' };
+    const first = await api('/games/plumber/sync', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ events: [ev], baseVersion: 1 }) });
+    expect(first.body.applied).toBe(1);
+    const second = await api('/games/plumber/sync', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ events: [ev] }) });
+    expect(second.body.applied).toBe(0);
+    const save = await api('/games/plumber/save', { headers: AUTH(token) });
+    const data = save.body.save as { data: { completed: number[]; stars: Record<string, number> } };
+    expect(data.data.completed).toEqual([3]);
+    expect(data.data.stars['normal:3']).toBe(2);
+  });
+
+  it('merges stats deltas across modes additively (once per uuid)', async () => {
+    const token = await login('stats@example.com');
+    const evs = [
+      { uuid: 's1', kind: 'stats', mode: 'normal', delta: { attempts: 1 } },
+      { uuid: 's2', kind: 'stats', mode: 'normal', delta: { hints: 2 } },
+      { uuid: 's3', kind: 'stats', mode: 'expert', delta: { wins: 1 } },
+    ];
+    const r = await api('/games/plumber/sync', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ events: evs }) });
+    expect(r.body.applied).toBe(3);
+    const save = await api('/games/plumber/save', { headers: AUTH(token) });
+    const stats = (save.body.save as { data: { stats: Record<string, { attempts: number; hints: number; wins: number }> } }).data.stats;
+    expect(stats.normal.attempts).toBe(1);
+    expect(stats.normal.hints).toBe(2);
+    expect(stats.expert.wins).toBe(1);
+    const again = await api('/games/plumber/sync', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ events: evs }) });
+    expect(again.body.applied).toBe(0);
+    const save2 = await api('/games/plumber/save', { headers: AUTH(token) });
+    const stats2 = (save2.body.save as { data: { stats: Record<string, { hints: number }> } }).data.stats;
+    expect(stats2.normal.hints).toBe(2);
+  });
+
+  it('sends permissive CORS headers and answers preflight', async () => {
+    const res = await fetch(base + '/health', { headers: { Origin: 'http://localhost:4173' } });
+    expect(res.headers.get('access-control-allow-origin')).toBe('*');
+    const pre = await fetch(base + '/games/plumber/sync', { method: 'OPTIONS', headers: { Origin: 'http://localhost:4173' } });
+    expect(pre.status).toBe(204);
+    expect(pre.headers.get('access-control-allow-methods')).toContain('POST');
+  });
+
+  it('exposes the OTP code only in test configuration', async () => {
+    const r = await api('/auth/otp/request', { method: 'POST', body: JSON.stringify({ email: 'reveal@example.com' }) });
+    expect(typeof r.body.code).toBe('string');
+    expect((r.body.code as string).length).toBe(6);
   });
 });

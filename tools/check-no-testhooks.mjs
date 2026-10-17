@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const DIST = process.argv[2] ?? 'dist';
-const FORBIDDEN = ['__PLUMBER__', 'lastCodeFor', 'VITE_TEST_HOOKS', 'auth.json', 'refresh_token'];
+const FORBIDDEN = ['__PLUMBER__', '__MG_TEST__', 'lastCodeFor', 'VITE_TEST_HOOKS', 'auth.json', 'refresh_token'];
 const TEXT_EXT = /\.(js|mjs|css|html|json|webmanifest|map)$/;
 
 function walk(dir, out = []) {

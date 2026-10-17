@@ -2,6 +2,7 @@ import type { AudioEngine } from '../../audio/engine';
 import type { Lang } from '../i18n';
 import type { Settings } from '../settings/store';
 import type { SaveData } from '../storage/save';
+import type { ProgressSink } from '../sync/engine';
 
 export interface GameContext {
   root: HTMLElement;
@@ -10,7 +11,11 @@ export interface GameContext {
   lang: Lang;
   audio: AudioEngine;
   level?: number;
+  /** Explicit difficulty mode for games that support it (plumber). */
+  mode?: string;
   dev: boolean;
+  /** Optional shared-account progress sink. Absent => pure local mode. */
+  progress?: ProgressSink;
   persist: () => Promise<void>;
   t: (key: string, vars?: Record<string, string | number>) => string;
   onExit: () => void;

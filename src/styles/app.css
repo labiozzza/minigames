@@ -43,7 +43,20 @@ button { font: inherit; color: inherit; }
 /* Catalog */
 .catalog { max-width: 860px; margin: 0 auto; padding: 20px 16px 40px; width: 100%; }
 .catalog-head { display: flex; align-items: flex-start; gap: 12px; }
-.catalog-head .icon-btn { margin-left: auto; }
+.catalog-head .icon-btn { margin-left: 0; }
+.head-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.sync-pill {
+  border: 1px solid var(--border, #2a3a55); background: var(--surface-2, #1a2436);
+  color: var(--muted); border-radius: 999px; padding: 6px 12px; font-size: 13px;
+  cursor: pointer; white-space: nowrap;
+}
+.sync-pill.synced { color: #44b570; border-color: #44b570; }
+.sync-pill.pending, .sync-pill.syncing { color: #f2c230; border-color: #f2c230; }
+.sync-pill.offline, .sync-pill.guest { color: var(--muted); }
+.sync-pill.conflict, .sync-pill.error { color: #e05a4e; border-color: #e05a4e; }
+.account-input { display: block; width: 100%; margin: 8px 0; padding: 10px; border-radius: 8px; border: 1px solid #2a3a55; background: var(--surface-2, #1a2436); color: inherit; }
+.conflict-box { border: 1px solid #e05a4e; border-radius: 10px; padding: 12px; margin: 10px 0; }
+.conflict-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .app-title { margin: 0; font-size: 30px; }
 .app-tagline { margin: 4px 0 0; color: var(--muted); }
 .continue-card, .game-card {

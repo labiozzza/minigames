@@ -85,8 +85,13 @@ export interface Store {
   putTelemetry(userId: string, events: Array<Record<string, unknown>>, ts: number): Promise<void>;
 }
 
+function blankStats(): Record<string, { attempts: number; wins: number; hints: number; skips: number }> {
+  const z = () => ({ attempts: 0, wins: 0, hints: 0, skips: 0 });
+  return { child: z(), normal: z(), expert: z() };
+}
+
 function blankSave(): SaveRec {
-  return { version: 1, updatedAt: Date.now(), seen: [], active: null, data: { completed: [], maxLevel: 1, stars: {}, fams: {}, collections: [], dailies: {} } };
+  return { version: 1, updatedAt: Date.now(), seen: [], active: null, data: { completed: [], maxLevel: 1, stars: {}, fams: {}, collections: [], dailies: {}, stats: blankStats() } };
 }
 
 /** Monotonic merge of a single validated event into a save. Idempotent by caller. */
@@ -113,6 +118,17 @@ export function applyEvent(save: { data: Record<string, unknown> }, e: Record<st
   } else if (e.kind === 'daily') {
     if (d.dailies && typeof d.dailies === 'object' && typeof e.day === 'string' && typeof e.stars === 'number') {
       (d.dailies as Record<string, number>)[e.day] = Math.max((d.dailies as Record<string, number>)[e.day] ?? 0, e.stars);
+    }
+  } else if (e.kind === 'stats') {
+    const mode = String(e.mode ?? 'normal');
+    const stats = d.stats as Record<string, Record<string, number>> | undefined;
+    const delta = e.delta as Record<string, unknown> | undefined;
+    if (stats && delta && typeof delta === 'object') {
+      if (!stats[mode]) stats[mode] = { attempts: 0, wins: 0, hints: 0, skips: 0 };
+      for (const k of ['attempts', 'wins', 'hints', 'skips']) {
+        const v = delta[k];
+        if (typeof v === 'number' && Number.isFinite(v)) stats[mode][k] = (stats[mode][k] ?? 0) + Math.max(0, Math.floor(v));
+      }
     }
   }
 }

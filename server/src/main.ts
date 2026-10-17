@@ -18,7 +18,7 @@ async function main(): Promise<void> {
   }
   // OTP codes are exposed ONLY in explicitly tagged test runs.
   const exposeCodes = process.env.MG_TEST_HOOKS === '1';
-  const { server } = createApp({ store, exposeCodes });
+  const { server } = createApp({ store, exposeCodes, cors: process.env.MG_CORS_ORIGIN ?? null });
   server.listen(port, '127.0.0.1', () => {
     console.log(`minigames-server on 127.0.0.1:${port} (local only, not production)`);
   });

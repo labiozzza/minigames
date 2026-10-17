@@ -33,6 +33,7 @@ export const en = {
   'levels.locked': 'Locked',
   'levels.page': 'Items {a}–{b}',
   'settings.title': 'Settings',
+  'account.title': 'Account & sync',
   'settings.theme': 'Theme',
   'settings.themeSystem': 'System',
   'settings.themeLight': 'Light',

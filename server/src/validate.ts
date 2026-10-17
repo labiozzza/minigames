@@ -8,13 +8,18 @@ const FAMILIES = new Set([
 
 export interface SyncEvent {
   uuid: string;
-  kind: 'win' | 'daily';
+  kind: 'win' | 'daily' | 'stats';
+  t?: number;
+  rulesetVersion?: string;
+  generatorVersion?: string;
+  puzzleId?: string;
   level?: number;
   stars?: number;
   mode?: string;
   family?: string;
   collections?: string[];
   day?: string;
+  delta?: { attempts?: number; wins?: number; hints?: number; skips?: number };
 }
 
 export interface ValidationResult<T> {
@@ -30,6 +35,15 @@ function isStr(v: unknown, max: number): v is string {
   return typeof v === 'string' && v.length > 0 && v.length <= max;
 }
 
+function envelope(r: Record<string, unknown>, kind: SyncEvent['kind']): SyncEvent {
+  const out: SyncEvent = { uuid: r.uuid as string, kind };
+  if (isInt(r.t, 0, 9_000_000_000_000)) out.t = r.t;
+  if (isStr(r.rulesetVersion, 64)) out.rulesetVersion = r.rulesetVersion;
+  if (isStr(r.generatorVersion, 64)) out.generatorVersion = r.generatorVersion;
+  if (isStr(r.puzzleId, 128)) out.puzzleId = r.puzzleId;
+  return out;
+}
+
 /** Validate one event; return null when it must be rejected. */
 export function validateSyncEvent(e: unknown): SyncEvent | null {
   if (!e || typeof e !== 'object') return null;
@@ -39,7 +53,10 @@ export function validateSyncEvent(e: unknown): SyncEvent | null {
     if (!isInt(r.level, 1, 1_000_000)) return null;
     if (!isInt(r.stars, 1, 3)) return null;
     if (!isStr(r.mode, 16) || !MODES.has(r.mode)) return null;
-    const out: SyncEvent = { uuid: r.uuid, kind: 'win', level: r.level, stars: r.stars, mode: r.mode };
+    const out = envelope(r, 'win');
+    out.level = r.level;
+    out.stars = r.stars;
+    out.mode = r.mode;
     if (isStr(r.family, 32)) {
       if (!FAMILIES.has(r.family)) return null;
       out.family = r.family;
@@ -54,7 +71,29 @@ export function validateSyncEvent(e: unknown): SyncEvent | null {
   if (r.kind === 'daily') {
     if (!isStr(r.day, 10) || !/^\d{4}-\d{2}-\d{2}$/.test(r.day)) return null;
     if (!isInt(r.stars, 1, 3)) return null;
-    return { uuid: r.uuid, kind: 'daily', day: r.day, stars: r.stars };
+    const out = envelope(r, 'daily');
+    out.day = r.day;
+    out.stars = r.stars;
+    return out;
+  }
+  if (r.kind === 'stats') {
+    if (!isStr(r.mode, 16) || !MODES.has(r.mode)) return null;
+    const d = r.delta;
+    if (!d || typeof d !== 'object') return null;
+    const delta: SyncEvent['delta'] = {};
+    let any = false;
+    for (const k of ['attempts', 'wins', 'hints', 'skips'] as const) {
+      const v = (d as Record<string, unknown>)[k];
+      if (v === undefined) continue;
+      if (!isInt(v, 1, 1000)) return null;
+      delta[k] = v;
+      any = true;
+    }
+    if (!any) return null;
+    const out = envelope(r, 'stats');
+    out.mode = r.mode;
+    out.delta = delta;
+    return out;
   }
   return null;
 }

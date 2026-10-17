@@ -52,7 +52,7 @@ export class AuthService {
     return false;
   }
 
-  async requestOtp(email: string, ip = 'unknown'): Promise<{ ok: true; retryAfter?: number }> {
+  async requestOtp(email: string, ip = 'unknown'): Promise<{ ok: true; retryAfter?: number; code?: string }> {
     const ts = this.now();
     if (this.ipLimited(ip, ts)) return { ok: true, retryAfter: 3600 };
     const log = (await this.store.otpRequests(email)).filter((t) => ts - t < REQ_WINDOW_MS);
@@ -63,7 +63,12 @@ export class AuthService {
     await this.store.pushOtpRequest(email, ts);
     const code = String(randomInt(0, 1000000)).padStart(6, '0');
     await this.store.putOtp(email, { codeHash: hashSecret(code), expiresAt: ts + CODE_TTL_MS, attempts: 0 });
-    if (this.exposeCodes) this.lastCodes.set(email, code);
+    if (this.exposeCodes) {
+      this.lastCodes.set(email, code);
+      // Test configuration only: surface the code so automated E2E can log in.
+      // Production instances run with exposeCodes=false and never return it.
+      return { ok: true, code };
+    }
     return { ok: true };
   }
 
