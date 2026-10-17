@@ -1,22 +1,36 @@
-# DEPLOY — публикация статики
+# DEPLOY — PWA + опциональный backend
 
-Сборка — набор статических файлов, backend не нужен. Обязателен HTTPS
-(localhost допустим для разработки).
+Правило безопасности: **не менять существующие VPS-сервисы без предварительного
+аудита и отдельного разрешения.** Всё ниже — план; в этой ветке ничего на
+production не разворачивалось. Обязателен HTTPS (localhost — исключение для
+разработки).
 
-## Сборка
+## 1. Сборка
 
 ```sh
-node --version   # >= 20.19
+node --version   # 20.19.0 (см. .nvmrc)
 npm ci
-npm run build    # -> dist/
-npm run preview  # проверка http://127.0.0.1:4173/
+npm run build            # -> dist/ (release, без test-hooks)
+npm run check:release    # гарантия отсутствия hooks/секретов в dist
+npm run preview          # http://127.0.0.1:4173/
 ```
 
-## Статический хостинг (корень или подпуть)
+`dist/` можно отдать отдельно, даже если backend живёт на другом домене
+(клиент работает офлайн-first и не требует сервера).
 
-`base: './'` — работают и корень домена, и подпуть. SPA-fallback на `index.html`.
+## 2. Разделение static PWA / backend
 
-### Nginx
+| Слой | Что | Где |
+|---|---|---|
+| Static PWA | `dist/` (html/js/atlas/sw/manifest) | CDN/nginx/статика, HTTPS |
+| Backend (опц.) | `server/` (node:http + pg), auth/sync/challenges/share/config/admin/telemetry | отдельный процесс, HTTPS, `/api` или свой домен |
+| DB | PostgreSQL (адаптер `PgStore`; локально — `FileStore`) | управляемый Postgres либо отдельная БД |
+
+`base: './'` — статика работает и из корня, и из подпути. Между PWA и backend
+нужен CORS (`MG_CORS_ORIGIN`) и HTTPS с обеих сторон. Клиент к серверу
+подключается переменной `VITE_API_BASE` (пусто = чистый офлайн).
+
+### Nginx (static)
 
 ```nginx
 server {
@@ -25,55 +39,63 @@ server {
   root /var/www/minigames/dist;
 
   add_header Service-Worker-Allowed /;
-  location / {
-    try_files $uri $uri/ /index.html;
-  }
-  location /assets/ {
-    add_header Cache-Control "public, max-age=31536000, immutable";
-  }
-  location = /sw.js {
-    add_header Cache-Control "no-cache";
-  }
+  location / { try_files $uri $uri/ /index.html; }
+  location /assets/ { add_header Cache-Control "public, max-age=31536000, immutable"; }
+  location = /sw.js { add_header Cache-Control "no-cache"; }
 }
 ```
 
-### Простой static (npx serve / VPS)
+## 3. Backend: Postgres, секреты, миграции
 
 ```sh
-npx -y serve dist -l 4173
-# или: python3 -m http.server 4173 -d dist
+# локальный тестовый stand
+PORT=8787 DATA_DIR=./server-data ADMIN_EMAILS=admin@example.com \
+MG_CORS_ORIGIN=https://example.com npx vite-node server/src/main.ts
+curl -sS 127.0.0.1:8787/health   # {"ok":true,...}
 ```
 
-## Проверка обновления
+- Postgres: `server/migrations/*.sql` (001 базовый, 002 admin config meta,
+  003 analytics/push). Применять по порядку; приложение стартует только после
+  успешных миграций.
+- Секреты через окружение, **не в репозитории**: OTP/session-ключ, строка
+  подключения Postgres, `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`, `ADMIN_EMAILS`.
+  Для push внести `VITE_VAPID_PUBLIC_KEY` в клиентскую сборку.
+- Клиент-серверные ограничения: строгий CORS, per-IP rate-limit на OTP,
+  admin-эндпоинты под ролью `admin`, telemetry только с валидным согласием.
 
-1. Открыть приложение, сыграть уровень (создаётся сейв).
-2. Выложить новую сборку с тем же scope.
-3. В открытом приложении появится «Доступна новая версия» → «Обновить».
-4. После reload прогресс и активный уровень восстанавливаются (миграция
-   `schemaVersion` — в `src/platform/storage/save.ts`).
+## 4. DNS / HTTPS / тестовый stand
 
-## Заголовки кеширования
+- `example.com` → static PWA; `api.example.com` → backend. TLS (Let's Encrypt),
+  HSTS. SW scope `/`.
+- Перед prod — **изолированный** stand с той же схемой миграций; на нём
+  проверяется health/readiness и протокол sync двумя клиентами.
 
-- `/assets/*` (хешированные чанки): `immutable, max-age=1y`.
-- `/sw.js`, `index.html`, `manifest.webmanifest`: `no-cache`.
+## 5. Здоровье, smoke, готовность
 
-## Опциональный серверный слой (sync/challenges/share)
+- `GET /health` — liveness (без авторизации).
+- `GET /ready` — readiness (БД доступна). Оба — 200 при готовности.
+- Smoke после деплоя (реальный браузер): каталог → обе игры → уровень проходит
+  → перезагрузка → прогресс на месте → офлайн-повтор.
+- Rollback приложения: предыдущий `dist/` + предыдущий backend-релиз; конфиг —
+  `/admin` draft→publish→rollback (immutable history, откат как новая версия).
 
-Клиент работает офлайн-first без сервера; `server/` — необязательный
-локальный tier (node:http, 0 runtime-зависимостей) для синхронизации,
-испытаний, шаринга и админки. **Не развёрнут** (production-deploy/Postgres/
-домен требуют отдельного разрешения по регламенту).
+## 6. Резервные копии
 
-Локальный preview:
+- Postgres: регулярный `pg_dump` + retention; проверка восстановления на
+  тестовом stand минимум раз в релиз.
+- Проверять, что health/readiness и smoke проходят **после** восстановления.
 
-```sh
-npm run dev:server                # vite-node, 127.0.0.1:8099, FileStore -> server-data/
-curl -sS 127.0.0.1:8099/health    # {"ok":true,"version":1}
-npm run test:server               # протокольные тесты
-```
+## 7. Откат релиза
 
-Перед production: включить HTTPS, заменить `FileStore` на Postgres-адаптер
-(интерфейс `Store` готов), подключить клиент к `/games/:id/challenges` и
-`/sync`, вынести секреты OTP/сессий в окружение. Rollback — по версиям
-`/admin` (draft → publish → rollback + audit).
+1. Static: вернуть предыдущий `dist/` (версии в CDN/nginx).
+2. Backend: предыдущий образ/коммит; аддитивные миграции — без разрушения
+   данных (никаких «down»-drop в проде).
+3. Конфиг: `/admin` rollback (новая версия на основе прежней).
+4. Сейвы клиента: миграции обратимы (бэкап перед миграцией, `readBackupSave`).
 
+## 8. Что в этой ветке НЕ сделано
+
+Production-развёртывание, Postgres, домен/HTTPS, OTP-доставка и live push —
+**BLOCKED_EXTERNAL** (нужны доступ/разрешение и ключи). Локально доступны
+FileStore-preview и полный серверный тестовый набор (в т.ч. против Postgres
+через `PG_URL`).

@@ -47,7 +47,7 @@
 | 41 | D | Гость сразу, потом email OTP и привязка | 01 §10 | — | — | guest link server tested | PASS |
 | 42 | D | Интеллектуальное слияние прогресса двух устройств | 01 §10 | — | — | IN_PROGRESS |
 | 43 | B | Единый модульный backend MiniGames | 01 §10 | — | — | modular server local | PASS |
-| 44 | D | Использовать существующий стек; при отсутствии Node/TS/Fastify/Postgres | 01 §10 | — | — | IN_PROGRESS |
+| 44 | D | Использовать существующий стек; при отсутствии Node/TS/Fastify/Postgres | 01 §10 | server/src/, src/ (TS strict, Vite, Phaser 4.2.1), node:http + pg | unit 172 + server 30 + e2e 92; использован node:http вместо Fastify (0 лишних зависимостей), Postgres-адаптер готов, live-БД BLOCKED_EXTERNAL | PARTIAL |
 | 45 | D | Безопасное изолированное развёртывание на существующем VPS | 01 §- | — | — | BLOCKED |
 | 46 | D | Игровые модули с единым plugin-контрактом | 01 §- | — | src/games/plumber/domain/ | tests/unit/plumber-domain.test.ts + tests/levels/plumber-mass.test.ts (1200/1200 WON, volume ok) | PASS |
 | 47 | D | Контролируемые обновления, миграции и откат | 01 §13 | src/platform/storage/save.ts | SAVE_SCHEMA 3, v1→v2→v3 lossless migration, pre-migration backup + restore, corrupt rejected; SW update deferred (skipWaiting off) never mid-tick | PASS |
@@ -58,7 +58,7 @@
 | 52 | D | Аналитика с минимизацией данных/согласием | 01 §15 | server/src/{validate,app}.ts, src/platform/telemetry.ts | diag (PII-free, no consent) vs analytics (versioned consent, anonymised userId=null, child subset, 180-day retention); revoke clears queue; data rights export/erase; server enforces allowlists | PASS |
 | 53 | D | Расширяемая локализация, сначала RU/EN | 01 §- | — | — | ru/en | PASS |
 | 54 | D | Комплексная доступность, общая и игровая | 01 §12 | src/platform/settings/store.ts | high contrast/large UI/reduced motion/flash-free/no-drag settings + root classes; colour-independent liquid symbols; keyboard with visible cursor; e2e a11y 4/4 | PASS |
-| 55 | D | Гибридная серверная проверка результатов | 01 §10 | — | — | IN_PROGRESS |
+| 55 | D | Гибридная серверная проверка результатов | 01 §10 | — | — | PARTIAL (нет серверной проверки результата; клиентская certify/witness есть, протокол sync готов) |
 | 56 | C | Обмен уровнями по deep link и короткому коду | 01 §- | — | — | link+code | PASS |
 | 57 | A | Нет пользовательского редактора, только генератор | 01 §- | — | — | no user editor | PASS |
 | 58 | C | Ежедневные и еженедельные общие испытания | 01 §- | — | — | UTC daily/weekly | PASS |
@@ -71,5 +71,36 @@
 | 65 | B | Одинаковые жидкости объединяются, разные конфликтуют вне смесителя | 01 §5 | — | src/games/plumber/domain/ | tests/unit/plumber-domain.test.ts + tests/levels/plumber-mass.test.ts (1200/1200 WON, volume ok) | PASS |
 | 66 | D | Постепенное развитие управления источниками | 01 §- | — | — | single->multi->program | PASS |
 | 67 | B | Визуальная программа из последовательных команд, без таймлайна | 01 §- | — | — | visual program | PASS |
-| 68 | C | Этапность при обязательной реализации всех функций | 01 §- | — | — | IN_PROGRESS |
+| 68 | C | Этапность при обязательной реализации всех функций | 01 §- | docs/remediation-plan.md | этапы R0–R5 отдельными коммитами, каждый с тестами и повторной регрессией; внешние блокировки выделены отдельно | PARTIAL (R6-аудит и prod-деплой требуют разрешения) |
 | 69 | D | Автономная работа OpenCode со строгими стоп-правилами | 01 §- | — | — | autonomous log | PASS |
+
+## Дополнительная матрица — пункты TZ v1.2 (remидиэйшн)
+
+Легенда та же. Дата проверок: 2026-10-17. Все команды воспроизводимы (`docs/ci/README.md`).
+
+| ID | Пункт TZ v1.2 | Реализация | Доказательство | Статус |
+|---|---|---|---|---|
+| R1-P0.1 | Durable storage + хеширование секретов + валидация схемы | `server/src/{store,pg-store,auth,validate}.ts`, `migrations/001_init.sql` | `npm run test:server` 30 PASS (store/auth/валидация); пароли/OTP — хеш | PASS |
+| R1-P0.2 | PostgreSQL-адаптер с реальными тестами, два независимых клиента | `server/src/pg-store.ts`, `server/migrations/*.sql` | `server/tests/pg.test.ts` (гейт `PG_URL`); sync-протокол двумя клиентами в `tests/e2e/sync.spec.ts` | PARTIAL (live-postgres в этом окружении BLOCKED_EXTERNAL — без Docker/Postgres; тесты готовы под `PG_URL`, CI-пайплайн поднимает Postgres) |
+| R1-P0.3 | Auth (OTP) + роли + rate-limit | `server/src/auth.ts`, `app.ts` | server-тесты OTP/роли/лимитов | PASS |
+| R1-P0.4 | Sync из браузера для обеих игр | `src/platform/sync/engine.ts`, `server/src/app.ts` | `tests/e2e/sync.spec.ts`, unit sync | PASS |
+| R1-P0.5 | Безопасность dev-hooks/эндпоинтов | `tools/check-no-testhooks.mjs`, `data-testonly` в `app.ts` | `npm run check:release` PASS | PASS |
+| R2-P0 | Канальная вода, стыки, объёмы, видео | `…/presentation/scene.ts` | mass 10000 (volume ok), `evidence/stages/*`, E2E pour | PASS |
+| R3-P1 | Режимы, решатель/генератор, подсказки, инпут/камера, a11y, онбординг | §5–8,12 | modes/input/onboarding/a11y e2e; 10k-сертификация | PASS |
+| R4-P1 | Коллекции/диорамы, daily+weekly, share, offline | §9,10,13 | collection/challenge/share/offline e2e | PASS |
+| R5-P2 | Admin, analytics, push, devtools, PWA-миграции, AssetGen reconcile, docs, CI | §14–19 | admin/privacy/dev e2e; assetgen 6/6; CI-файл; этот отчёт | PARTIAL (push-доставка без VAPID, AI-арт env BLOCKED_ASSET) |
+| §18.1 | Воспроизводимые локальные+CI команды, фикс версий | `.nvmrc`, `.python-version`, `engines`, `docs/ci/github-workflows-ci.yml` | `docs/ci/README.md` | PASS (включение CI — BLOCKED_EXTERNAL: `workflow`-scope токен) |
+| §18.2 | CI на push/PR с Postgres service и headless Playwright | `docs/ci/github-workflows-ci.yml` | файл + локальные команды | PARTIAL (артефакт готов; провижн требует права) |
+| §18.3 | E2E ключевых сценариев без «магического» solve() | `tests/e2e/{onboarding,input,modes,share,privacy}.spec.ts` | реальные click/drag/keyboard | PASS |
+| §18.4 | На каждую механику позитив+негатив на реальном UI | tests/e2e/* | 92/92 desktop+mobile | PASS |
+| §18.5 | 10k задач, реальные HTTP+Postgres, два клиента, офлайн, mount/unmount, SW-миграции | tests/levels, server/tests, sync/offline e2e, `plumber-versioning` | см. `docs/remediation-report.md` §4 | PASS (pg live — PARTIAL, см. R1-P0.2) |
+| §18.6 | Визуальные артефакты: screenshot+видео каждого состояния | `evidence/screenshots/*`, `evidence/video/*`, `evidence/stages/*` | файлы в репозитории | PARTIAL (не каждый экран имеет видео) |
+| §18.7 | Перфоманс с исходными условиями (профиль/viewport/запуски/FPS) | `docs/performance-protocol.md`, `tests/e2e/perf.spec.ts`, `evidence/perf-report-*` | median/p5 зафиксированы; real-device NOT_RUN | PARTIAL (headless rAF throttled; 60/30 не подтверждены) |
+| §18.8 | Исправить flaky E2E «Переливашек» | `src/games/water-sort/presentation/scene.ts` (`advanceStage`) | полный прогон 92/92 без ретраев; `docs/performance-protocol.md` §«Переливашки» | PASS |
+| §18.9 | Минимальный профиль browser + 2 размера mobile/desktop; реальные устройства — NOT_RUN | `playwright.config.ts` (desktop/mobile, Chromium) | 92/92; устройства NOT_RUN честно | PARTIAL |
+| §19.1 | README: разделить офлайн и сервер, реальные стадии | `README.md` | переписан | PASS |
+| §19.2 | Матрица: 69 отдельных строк + доп. матрица этого документа | `docs/requirements-matrix.md` | этот файл | PASS |
+| §19.3 | Устранить противоречие stage-06 ↔ final-acceptance | `docs/stage-06-report.md`, `docs/final-acceptance-report.md` | обе выправлены | PASS |
+| §19.4 | `docs/remediation-report.md` | `docs/remediation-report.md` | создан | PASS |
+| §19.5 | `docs/DEPLOY.md`: split, Postgres, HTTPS, DNS, бэкапы, откат, smoke, запрет на VPS без разрешения | `docs/DEPLOY.md` | переписан | PASS |
+| §19.6 | Не коммитить бинарные кэши/секреты, поправить .gitignore | `.gitignore` (`__pycache__/`, `*.pyc`) | `0376074` | PASS |
