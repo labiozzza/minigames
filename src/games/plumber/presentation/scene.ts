@@ -27,6 +27,24 @@ const WATER_COLORS: Record<string, number> = {
   purple: 0x9a6ee8,
 };
 
+/** Blend a 0xRRGGBB colour toward white (amt>0) — volume highlights. */
+function lighten(color: number, amt: number): number {
+  const r = (color >> 16) & 255;
+  const g = (color >> 8) & 255;
+  const b = color & 255;
+  const up = (v: number): number => Math.round(v + (255 - v) * amt);
+  return (up(r) << 16) | (up(g) << 8) | up(b);
+}
+
+/** Blend a 0xRRGGBB colour toward black — refraction edges. */
+function darken(color: number, amt: number): number {
+  const r = (color >> 16) & 255;
+  const g = (color >> 8) & 255;
+  const b = color & 255;
+  const dn = (v: number): number => Math.round(v * (1 - amt));
+  return (dn(r) << 16) | (dn(g) << 8) | dn(b);
+}
+
 export type Quality = 'auto' | 'high' | 'low';
 
 export interface SceneSettings {
@@ -50,6 +68,8 @@ export interface SceneRefs {
   canMove?: () => boolean;
   /** §12 shared accessibility + graphics preferences. */
   settings?: () => SceneSettings;
+  /** Fired once sprites/tiles exist. The host syncs state here instead of a timer. */
+  onReady?: () => void;
 }
 
 interface PointerTrack {
@@ -90,6 +110,10 @@ export class PlumberScene extends Phaser.Scene {
   private valves: boolean[] = [];
   private colors: Array<string | null> = [];
   private fractions: number[] = [];
+  /** Smoothed fill levels: ease toward `fractions` between fixed sim ticks. */
+  private shownFractions: number[] = [];
+  private targetFractions: number[] = [];
+  private waterAnim = false;
   private cameFrom: Array<Side | null> = [];
   private leak = -1;
   private hint = -1;
@@ -139,6 +163,8 @@ export class PlumberScene extends Phaser.Scene {
       this.drawFocus();
     });
     this.installGestures();
+    // Tiles now exist: let the host push the model state (no deferred timer).
+    this.refs.onReady?.();
   }
 
   /** Camera: zoom bounds, clamped pan, pointer/wheel zoom. */
@@ -349,6 +375,7 @@ export class PlumberScene extends Phaser.Scene {
    */
   update(_time: number, delta: number): void {
     if (!Number.isFinite(delta) || delta <= 0) return;
+    if (this.waterAnim) this.stepWater(Math.min(delta, 60));
     this.frames.push(delta);
     if (this.frames.length > 120) this.frames.shift();
     const override = this.prefs().quality;
@@ -367,6 +394,22 @@ export class PlumberScene extends Phaser.Scene {
     if (level === this.qLevel) return;
     this.qLevel = level;
     this.redrawAll();
+  }
+
+  /** Ease drawn fill levels toward the model's per-tick truth. */
+  private stepWater(deltaMs: number): void {
+    const k = Math.min(1, deltaMs / 110);
+    let active = false;
+    for (let i = 0; i < this.targetFractions.length; i++) {
+      const t = this.targetFractions[i] ?? 0;
+      const c = this.shownFractions[i] ?? 0;
+      if (Math.abs(t - c) > 0.002) {
+        this.shownFractions[i] = c + (t - c) * k;
+        active = true;
+      } else this.shownFractions[i] = t;
+    }
+    if (active) this.redrawAll();
+    else this.waterAnim = false;
   }
 
   /** §12 measured render stats (frame time in ms). */
@@ -448,6 +491,7 @@ export class PlumberScene extends Phaser.Scene {
     for (let i = 0; i < n; i++) {
       const { x, y } = this.cellXY(i);
       const bg = this.add.graphics();
+      bg.setDepth(0);
       bg.fillStyle(0x141c2e, 1);
       bg.fillRoundedRect(x, y, this.cell, this.cell, Math.max(4, this.cell * 0.08));
       bg.lineStyle(1, 0x2a3a55, 1);
@@ -458,7 +502,12 @@ export class PlumberScene extends Phaser.Scene {
       if (!this.fallback && frame && this.textures.get('plumber').has(frame)) {
         const img = this.add.image(x + this.cell / 2, y + this.cell / 2, 'plumber', frame);
         img.setDisplaySize(this.cell * 0.96, this.cell * 0.96);
+        // Orientation is applied at creation: the very first frame already matches
+        // the model. No deferred sync/timer may be required for a correct view.
+        img.setAngle((this.rots[i] ?? 0) * 90);
         img.setData('cell', i);
+        // Glass sits above the water layer → liquid reads as *inside* the tube.
+        img.setDepth(2);
         this.sprites.push(img);
       } else {
         const g = this.add.graphics();
@@ -468,6 +517,7 @@ export class PlumberScene extends Phaser.Scene {
         this.gfx.push(g);
       }
       const wg = this.add.graphics();
+      wg.setDepth(1);
       this.waterGfx.push(wg);
     }
     this.redrawAll();
@@ -488,6 +538,15 @@ export class PlumberScene extends Phaser.Scene {
     void _water;
     this.colors = [...colors];
     this.fractions = [...fractions];
+    // Smooth fill: ease the drawn level toward the tick's true level. Snap on
+    // reduced motion, on a level change and whenever no interpolation is wanted.
+    if (this.shownFractions.length !== fractions.length || this.reducedMotion()) {
+      this.shownFractions = [...fractions];
+      this.waterAnim = false;
+    } else {
+      this.targetFractions = [...fractions];
+      this.waterAnim = true;
+    }
     this.leak = leak;
     this.hint = hint;
     const n = this.def.gridW * this.def.gridH;
@@ -524,6 +583,7 @@ export class PlumberScene extends Phaser.Scene {
       const img = this.add.image(x + this.cell / 2, y + this.cell / 2, 'plumber', frame);
       img.setDisplaySize(this.cell * 0.96, this.cell * 0.96);
       img.setAngle((this.rots[i] ?? 0) * 90);
+      img.setDepth(2);
       this.sprites[i] = img;
     } else {
       const g = this.add.graphics();
@@ -543,7 +603,7 @@ export class PlumberScene extends Phaser.Scene {
     if (!g) return;
     g.clear();
     const { x, y } = this.cellXY(i);
-    const frac = this.fractions[i] ?? 0;
+    const frac = this.shownFractions[i] ?? this.fractions[i] ?? 0;
     const kind = this.kindOf(i);
     const color = WATER_COLORS[this.colors[i] ?? 'blue'] ?? 0x2fa8de;
 
@@ -559,11 +619,18 @@ export class PlumberScene extends Phaser.Scene {
         const wdt = this.cell - inset * 2;
         const bodyH = this.cell - inset * 2;
         const hgt = bodyH * Math.min(1, frac);
-        g.fillStyle(color, 0.85);
-        g.fillRoundedRect(x + inset, y + this.cell - inset - hgt, wdt, hgt, Math.min(10, wdt * 0.18));
+        const rad = Math.min(10, wdt * 0.18);
+        g.fillStyle(darken(color, 0.35), 0.9);
+        g.fillRoundedRect(x + inset, y + this.cell - inset - hgt, wdt, hgt, rad);
+        g.fillStyle(color, 0.92);
+        g.fillRoundedRect(x + inset + 2, y + this.cell - inset - hgt + 2, wdt - 4, Math.max(0, hgt - 2), rad);
+        if (this.qLevel < 2 && hgt > 8) {
+          g.fillStyle(lighten(color, 0.55), 0.4);
+          g.fillRoundedRect(x + inset + wdt * 0.16, y + this.cell - inset - hgt + 4, wdt * 0.28, Math.max(2, hgt - 8), rad * 0.6);
+        }
         if (this.qLevel < 1) {
           g.lineStyle(2, 0xffffff, 0.18);
-          g.strokeRoundedRect(x + inset, y + this.cell - inset - bodyH, wdt, bodyH, Math.min(10, wdt * 0.18));
+          g.strokeRoundedRect(x + inset, y + this.cell - inset - bodyH, wdt, bodyH, rad);
         }
       } else {
         this.drawChannelWater(g, i, x, y, kind, color, frac);
@@ -618,7 +685,12 @@ export class PlumberScene extends Phaser.Scene {
     }
   }
 
-  /** Liquid follows the internal channel of the pipe, from the inlet side. */
+  /**
+   * Liquid follows the *internal channel* of the pipe, from the inlet side.
+   * Rendered as a stack of layers (dark refraction edge → body → volume core →
+   * moving specular streak → meniscus) so it reads as volume inside the glass,
+   * not as a stroked line. Pure presentation: geometry comes from the model.
+   */
   private drawChannelWater(g: Phaser.GameObjects.Graphics, i: number, x: number, y: number, kind: string, color: number, frac: number): void {
     const rot = this.rots[i] ?? 0;
     const open = kind !== 'valve' || (this.valves[i] ?? true);
@@ -627,41 +699,51 @@ export class PlumberScene extends Phaser.Scene {
     const filled = fillFrom(geo, this.cameFrom[i] ?? null, frac);
     if (filled.length === 0) return;
     const c = this.cell;
-    const width = Math.max(3, geo.halfWidth * 2 * c);
+    const width = Math.max(4, geo.halfWidth * 2 * c);
+    const w2 = width / 2;
+    const light = lighten(color, 0.5);
+    const dark = darken(color, 0.4);
     const px = (p: { x: number; y: number }) => ({ x: x + p.x * c, y: y + p.y * c });
-    // Outer wet band.
-    g.lineStyle(width, color, 0.85);
-    for (const s of filled) {
-      const a = px(s.a);
-      const b = px(s.b);
+    const stroke = (a: { x: number; y: number }, b: { x: number; y: number }, w: number, col: number, alpha: number) => {
+      g.lineStyle(w, col, alpha);
       g.beginPath();
       g.moveTo(a.x, a.y);
       g.lineTo(b.x, b.y);
       g.strokePath();
+    };
+    const pts = filled.map((s) => ({ a: px(s.a), b: px(s.b) }));
+    const cap = pts[pts.length - 1].b;
+    // 1. refraction edge: full-width dark band + round joints keep the run seamless.
+    for (const s of pts) stroke(s.a, s.b, width, dark, 0.6);
+    for (const s of pts) { g.fillStyle(dark, 0.6); g.fillCircle(s.a.x, s.a.y, w2); }
+    g.fillStyle(dark, 0.6);
+    g.fillCircle(cap.x, cap.y, w2);
+    // 2. body.
+    for (const s of pts) stroke(s.a, s.b, width, color, 0.92);
+    for (const s of pts) { g.fillStyle(color, 0.92); g.fillCircle(s.a.x, s.a.y, w2); }
+    g.fillStyle(color, 0.92);
+    g.fillCircle(cap.x, cap.y, w2);
+    // 3. volume core (lighter, narrower) gives the liquid mass.
+    for (const s of pts) stroke(s.a, s.b, width * 0.64, light, 0.5);
+    for (const s of pts) { g.fillStyle(light, 0.5); g.fillCircle(s.a.x, s.a.y, w2 * 0.64); }
+    g.fillStyle(light, 0.5);
+    g.fillCircle(cap.x, cap.y, w2 * 0.64);
+    if (this.qLevel >= 2) return; // decoration budget exhausted: keep the volume, drop the sheen.
+    // 4. specular streak, offset perpendicular to each arm, flowing along the water.
+    for (const s of pts) {
+      const dx = s.b.x - s.a.x;
+      const dy = s.b.y - s.a.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len;
+      const ny = dx / len;
+      const off = w2 * 0.34;
+      stroke({ x: s.a.x + nx * off, y: s.a.y + ny * off }, { x: s.b.x + nx * off, y: s.b.y + ny * off }, Math.max(1.5, width * 0.16), 0xffffff, 0.3);
     }
-    // Round joints so corners/tees connect seamlessly.
-    g.fillStyle(color, 0.85);
-    for (const s of filled) {
-      const a = px(s.a);
-      g.fillCircle(a.x, a.y, width / 2);
-    }
-    const last = filled[filled.length - 1];
-    if (last) {
-      const b = px(last.b);
-      g.fillCircle(b.x, b.y, width / 2);
-    }
-    // Inner highlight (reads as liquid depth, no topology change). Dropped
-    // first when auto-quality steps down (§12): decoration only, never geometry.
-    if (this.qLevel >= 2) return;
-    g.lineStyle(Math.max(1, width * 0.32), 0xffffff, 0.16);
-    for (const s of filled) {
-      const a = px(s.a);
-      const b = px(s.b);
-      g.beginPath();
-      g.moveTo(a.x, a.y);
-      g.lineTo(b.x, b.y);
-      g.strokePath();
-    }
+    // 5. meniscus at the moving fill front.
+    g.fillStyle(light, 0.85);
+    g.fillCircle(cap.x, cap.y, w2 * 0.72);
+    g.fillStyle(0xffffff, 0.22);
+    g.fillCircle(cap.x, cap.y, w2 * 0.34);
   }
 
   private kindOf(i: number): string {
@@ -715,6 +797,11 @@ export class PlumberScene extends Phaser.Scene {
 
   usesFallback(): boolean {
     return this.fallback;
+  }
+
+  /** Quarter-turns currently drawn per cell (-1 where a primitive fallback is used). */
+  spriteAngles(): number[] {
+    return this.sprites.map((s) => (s ? ((Math.round(s.angle / 90) % 4) + 4) % 4 : -1));
   }
 
   cellCenter(i: number): { x: number; y: number } {

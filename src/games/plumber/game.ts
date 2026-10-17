@@ -50,6 +50,8 @@ export class PlumberGame implements GameHandle {
   private titleEl!: HTMLElement;
   private goalEl!: HTMLElement;
   private bannerEl!: HTMLElement;
+  private bannerText!: HTMLElement;
+  private bannerActions!: HTMLElement;
   private startBtn!: HTMLButtonElement;
   private undoBtn!: HTMLButtonElement;
   private modeBtn!: HTMLButtonElement;
@@ -164,6 +166,9 @@ export class PlumberGame implements GameHandle {
     this.startBtn = button('', 'btn primary big', () => this.onStartPause(), t('plumber.start'));
     bottom.append(this.undoBtn, redoBtn, restartBtn, hintBtn, levelsBtn, albumBtn, this.moveBtn, this.valveBtn, this.startBtn);
     this.bannerEl = el('div', 'plumber-banner');
+    this.bannerText = el('div', 'banner-text', '');
+    this.bannerActions = el('div', 'banner-actions');
+    this.bannerEl.append(this.bannerText, this.bannerActions);
     this.bannerEl.hidden = true;
     this.progBar = el('div', 'plumber-program');
     this.progList = el('div', 'program-list');
@@ -378,14 +383,15 @@ export class PlumberGame implements GameHandle {
           const s = this.ctx.settings;
           return { symbols: s.symbols, reducedMotion: s.reducedMotion, flashFree: s.flashFree, noDrag: s.noDrag, quality: s.quality };
         },
+        // Sync the model state the moment tiles exist: deterministic first frame,
+        // independent of any setTimeout.
+        onReady: () => {
+          this.scene = this.game?.scene.getScene('plumber') as PlumberScene;
+          this.syncScene(null);
+        },
       },
     });
     this.scene = this.game.scene.getScene('plumber') as PlumberScene;
-    // First sync after scene creation (scene registers on create via event loop).
-    window.setTimeout(() => {
-      this.scene = this.game?.scene.getScene('plumber') as PlumberScene;
-      this.syncScene(null);
-    }, 60);
   }
 
   // ---------- commands ----------
@@ -403,6 +409,9 @@ export class PlumberGame implements GameHandle {
       } else this.audio.error();
       return;
     }
+    // §2: a failed trial never locks the player out. Any edit first resets the
+    // trial (water/errors) while keeping the built pipes, then applies normally.
+    if (this.state.phase === 'FAILED') this.fixPipes();
     if (this.state.phase !== 'PREPARING') return;
     // §8 guided tap: on the highlighted cell a single touch performs the very
     // action the guide asks for (rotate/valve/carry), so no mode juggling.
@@ -645,8 +654,13 @@ export class PlumberGame implements GameHandle {
   private onStartPause(): void {
     this.clearFlourish();
     const ph = this.state.phase;
-    if (ph === 'PREPARING' || ph === 'STOPPED' || ph === 'FAILED') {
-      this.bannerEl.hidden = true;
+    if (ph === 'FAILED') {
+      // §2: "Повторить" — reset trial resources (pipes preserved), then re-run.
+      this.retry();
+      return;
+    }
+    if (ph === 'PREPARING' || ph === 'STOPPED') {
+      this.hideBanner();
       if (this.state.phase === 'PREPARING' && this.state.tick === 0) {
         this.slot.stats[this.def.mode].attempts += 1;
         this.ctx.progress?.stats({ gameId: PLUMBER_ID, puzzleId: this.def.puzzleId, rulesetVersion: RULESET_VERSION, generatorVersion: GENERATOR_VERSION, mode: this.def.mode, delta: { attempts: 1 } });
@@ -750,8 +764,7 @@ export class PlumberGame implements GameHandle {
       }
       sink.stats({ gameId: PLUMBER_ID, puzzleId: this.def.puzzleId, rulesetVersion: RULESET_VERSION, generatorVersion: GENERATOR_VERSION, mode, delta: { wins: 1 } });
     }
-    this.bannerEl.textContent = `${this.ctx.t('plumber.won')} ${'★'.repeat(stars)}`;
-    this.bannerEl.hidden = false;
+    this.setBanner(`${this.ctx.t('plumber.won')} ${'★'.repeat(stars)}`);
     this.startBtn.textContent = this.ctx.t('plumber.next');
     void this.persist();
     window.dispatchEvent(new CustomEvent('mg:first-win'));
@@ -775,11 +788,58 @@ export class PlumberGame implements GameHandle {
     this.audio.error();
     recordAnalytics(this.ctx.settings, { type: 'level_fail', gameId: PLUMBER_ID, mode: this.def.mode, level: this.level });
     if (this.ctx.settings.vibration) vibrate(30);
-    this.bannerEl.textContent = this.ctx.t('plumber.failed') + (this.state.leakCell !== null ? ` (#${this.state.leakCell})` : '');
-    this.bannerEl.hidden = false;
+    const { t } = this.ctx;
+    // §2: never dead-end. Two clear ways forward, input stays live.
+    this.setBanner(
+      t('plumber.failed'),
+      [
+        button(t('plumber.fixPipes'), 'btn', () => this.fixPipes(), t('plumber.fixPipes')),
+        button(t('plumber.retry'), 'btn primary', () => this.retry(), t('plumber.retry')),
+      ],
+    );
     // §8: show the real cause on the real cell, not just a red number.
     this.scene?.flashError(this.state.errorCell ?? this.state.leakCell ?? -1);
     this.dev?.sync(this.state);
+    void this.persist();
+  }
+
+  private hideBanner(): void {
+    this.bannerEl.hidden = true;
+    this.bannerActions.innerHTML = '';
+  }
+
+  /** Show the top banner with optional real action buttons (never locks input). */
+  private setBanner(text: string, actions: HTMLElement[] = []): void {
+    this.bannerText.textContent = text;
+    this.bannerActions.innerHTML = '';
+    for (const a of actions) this.bannerActions.append(a);
+    this.bannerEl.hidden = false;
+  }
+
+  /** §2 "Исправить трубы": reset the failed trial, keep the built pipes, allow editing. */
+  private fixPipes(): void {
+    applyCommand(this.state, { type: 'restart' });
+    this.stopTicker();
+    this.undoStack = [];
+    this.redoStack = [];
+    this.hintCell = -1;
+    this.lastLeak = -1;
+    this.hideBanner();
+    this.dev?.sync(this.state);
+    this.syncScene(null);
+    this.refreshChrome();
+  }
+
+  /** §2 "Повторить": reset trial resources (pipes preserved), then run again. */
+  private retry(): void {
+    this.fixPipes();
+    if (applyCommand(this.state, { type: 'start' })) {
+      this.audio.pour(0.4);
+      this.startTicker();
+    }
+    this.dev?.sync(this.state);
+    this.syncScene(null);
+    this.refreshChrome();
     void this.persist();
   }
 
@@ -1426,6 +1486,8 @@ export class PlumberGame implements GameHandle {
       carried: () => (this.state.carried ? this.state.carried.kind : null),
       rotatable: () => this.def.cells.map((c, i) => ({ c, i })).filter(({ c, i }) => ['straight', 'elbow', 't', 'cross', 'cap', 'valve', 'filter', 'mixer', 'distributor'].includes(kindAt(this.state, i)) && !c.locked).map(({ i }) => i),
       usesFallback: () => this.scene?.usesFallback() ?? null,
+      spriteAngles: () => this.scene?.spriteAngles() ?? [],
+      rots: () => [...this.state.rots],
       receiverGot: () => [...this.state.receiverGot],
       water: () => [...this.state.water],
       tick: () => this.state.tick,

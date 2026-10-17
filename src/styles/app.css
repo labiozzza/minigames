@@ -81,6 +81,8 @@ button { font: inherit; color: inherit; }
 }
 .plumber-goal { text-align: center; padding: 6px 12px; font-size: 15px; }
 .plumber-banner { text-align: center; padding: 10px 14px; font-size: 16px; }
+.banner-actions { display: flex; gap: 10px; justify-content: center; margin-top: 10px; }
+.banner-actions .btn { min-width: 140px; }
 .guide-skip { color: var(--fg); }
 .guide-pulse { animation: guide-pulse 1s ease-in-out infinite; outline: 3px solid #f2c230; outline-offset: 2px; }
 @keyframes guide-pulse { 0%, 100% { outline-color: #f2c230; } 50% { outline-color: rgba(242, 194, 48, 0.35); } }
