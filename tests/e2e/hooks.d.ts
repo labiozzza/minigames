@@ -40,6 +40,18 @@ declare global {
       renderer(): 'webgl' | 'canvas' | null;
       perf(): { min: number; median: number; p95: number; samples: number; quality: number } | null;
     };
+    __PLUMBER_DEV__: {
+      state(): { puzzleId: string; seed: number; phase: string; tick: number };
+      dump(): unknown;
+      exportJson(): string;
+      importJson(text: string): { ok: boolean; steps: number; phase: string; checksum: string; reason?: string };
+      step(): number;
+      batch(n: number): { schema: string; total: number; approved: number; rejected: { puzzleId: string; seed: number; reason: string }[] };
+      rejectToFixture(spec: { puzzleId: string; seed: number; reason: string }): { puzzleId: string; seed: number; expectPhase: string; note: string };
+      certify(): { ok: boolean; phase: string; volumeOk: boolean; trivialWin: boolean; solvable: boolean; reasons: string[] };
+      panelVisible(): boolean;
+      destroy(): void;
+    };
     __MG_TEST__: {
       save(): {
         games: Record<string, {

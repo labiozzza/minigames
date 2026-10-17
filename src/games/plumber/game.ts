@@ -80,6 +80,7 @@ export class PlumberGame implements GameHandle {
   private lastLeak = -1;
   private lastDelivered = 0;
   private renderer: 'webgl' | 'canvas' | null = null;
+  private dev: { sync: (s: ReturnType<typeof createRuntime>) => void; destroy: () => void } | null = null;
   /** §14: published config this session's new levels pin. */
   private configRevision = 1;
   private configChecksum = '';
@@ -103,6 +104,7 @@ export class PlumberGame implements GameHandle {
     g.loadOrGenerate();
     g.initPhaser();
     g.exposeTestHook();
+    void g.initDev();
     window.addEventListener('keydown', g.onKey);
     document.addEventListener('visibilitychange', g.onVis);
     g.applyAudioPrefs();
@@ -463,6 +465,7 @@ export class PlumberGame implements GameHandle {
         this.undoStack.pop();
         this.audio.error();
       }
+      this.dev?.sync(this.state);
       this.refreshChrome();
       return;
     }
@@ -478,6 +481,7 @@ export class PlumberGame implements GameHandle {
       this.undoStack.pop();
       this.audio.error();
     }
+    this.dev?.sync(this.state);
     this.refreshChrome();
   }
 
@@ -505,6 +509,7 @@ export class PlumberGame implements GameHandle {
       this.undoStack.pop();
       this.audio.error();
     }
+    this.dev?.sync(this.state);
     this.refreshChrome();
   }
 
@@ -538,6 +543,7 @@ export class PlumberGame implements GameHandle {
       if (prev) restore(this.state, prev);
       this.audio.error();
     }
+    this.dev?.sync(this.state);
     this.refreshChrome();
   }
 
@@ -572,6 +578,7 @@ export class PlumberGame implements GameHandle {
     restore(this.state, prev);
     this.hintCell = -1;
     this.audio.ui();
+    this.dev?.sync(this.state);
     this.syncScene(null);
     this.refreshChrome();
     void this.persist();
@@ -584,6 +591,7 @@ export class PlumberGame implements GameHandle {
     this.undoStack.push(snapshot(this.state));
     restore(this.state, next);
     this.audio.ui();
+    this.dev?.sync(this.state);
     this.syncScene(null);
     this.refreshChrome();
     void this.persist();
@@ -595,6 +603,7 @@ export class PlumberGame implements GameHandle {
     this.hintCell = -1;
     this.stopTicker();
     this.audio.ui();
+    this.dev?.sync(this.state);
     this.syncScene(null);
     this.refreshChrome();
     void this.persist();
@@ -628,6 +637,7 @@ export class PlumberGame implements GameHandle {
       this.audio.error();
       toast(this.toastRoot!, this.ctx.t('game.noHint'));
     }
+    this.dev?.sync(this.state);
     this.syncScene(null);
     void this.persist();
   }
@@ -653,6 +663,7 @@ export class PlumberGame implements GameHandle {
       this.nextLevel();
       return;
     }
+    this.dev?.sync(this.state);
     this.syncScene(null);
     this.refreshChrome();
     void this.persist();
@@ -768,6 +779,7 @@ export class PlumberGame implements GameHandle {
     this.bannerEl.hidden = false;
     // §8: show the real cause on the real cell, not just a red number.
     this.scene?.flashError(this.state.errorCell ?? this.state.leakCell ?? -1);
+    this.dev?.sync(this.state);
     void this.persist();
   }
 
@@ -1277,6 +1289,104 @@ export class PlumberGame implements GameHandle {
     await this.ctx.persist();
   }
 
+  /** §16: dev/test-only diagnostics + replay + level editor bridge. */
+  private async initDev(): Promise<void> {
+    if (!TEST_HOOKS) return;
+    const [{ DiagRecorder, importDump, replayDump, batchDiagnose, rejectToFixture }, { mountDevPanel }, { rotateCell, removeObject, checkDraft }, solver, gen] = await Promise.all([
+      import('./dev/session'),
+      import('./dev/panel'),
+      import('./dev/editor'),
+      import('./domain/solver'),
+      import('./domain/generator'),
+    ]);
+    const recorder = new DiagRecorder(this.def);
+    let lastState = this.state;
+    this.dev = {
+      sync: (st) => {
+        if (st !== lastState) {
+          lastState = st;
+          recorder.reset(this.def);
+        }
+        recorder.sync(st);
+      },
+      destroy: () => { this.dev = null; },
+    };
+    // The panel is opt-in via ?devtools=1 so the overlay never interferes with
+    // normal gameplay/testing (dev.spec opens it explicitly).
+    const devtools = new URLSearchParams(window.location.search).has('devtools');
+    const panel = devtools ? mountDevPanel(this.root, {
+      getState: () => ({
+        puzzleId: this.def.puzzleId,
+        seed: this.def.seed,
+        rulesetVersion: this.def.rulesetVersion,
+        generatorVersion: this.def.generatorVersion,
+        configRevision: this.def.configRevision,
+        configChecksum: this.def.configChecksum,
+        tick: this.state.tick,
+        phase: this.state.phase,
+        fps: this.scene?.perf()?.median ?? null,
+        valves: [...this.state.valves],
+        water: [...this.state.water],
+        waterColor: this.state.waterColor.map((c) => (c ? String(c) : null)),
+        rots: [...this.state.rots],
+        generator: this.def.family,
+        solver: this.state.phase,
+      }),
+      getDump: () => recorder.toDump(this.state, { attempts: this.slot.stats[this.def.mode]?.attempts, hints: this.state.hintsUsed, playerRotations: this.state.playerRotations }, this.state.errorKind ? { kind: this.state.errorKind, cell: this.state.errorCell ?? this.state.leakCell ?? null } : null),
+      importDump: (text) => {
+        const parsed = importDump(text);
+        if (!parsed.ok) return { ok: false, steps: 0, phase: 'PREPARING', checksum: '', reason: parsed.reason };
+        return replayDump(parsed.dump);
+      },
+      step: () => {
+        if (this.state.phase !== 'RUNNING') return;
+        stepTick(this.state);
+        this.syncScene(null);
+        this.refreshChrome();
+      },
+      batch: (count) => batchDiagnose(
+        Array.from({ length: count }, (_, i) => ({ puzzleId: `plumber-batch-${i}`, seed: (0x9e3779b9 * (i + 1)) >>> 0, opts: { mode: 'normal' as const } })),
+        (id, seed, opts) => gen.generateLevel(id, seed, opts),
+      ),
+      rotate: () => {
+        if (this.cursor < 0) return;
+        this.def = rotateCell(this.def, this.cursor);
+        this.state = createRuntime(this.def);
+        recorder.reset(this.def);
+        this.syncScene(null);
+        this.refreshChrome();
+      },
+      remove: () => {
+        if (this.cursor < 0) return;
+        this.def = removeObject(this.def, this.cursor);
+        this.state = createRuntime(this.def);
+        recorder.reset(this.def);
+        this.syncScene(null);
+        this.refreshChrome();
+      },
+      certify: () => checkDraft(this.def, (d) => solver.diagnose(d)),
+    }) : { destroy: () => {}, refresh: () => {} };
+    (window as unknown as { __PLUMBER_DEV__?: unknown }).__PLUMBER_DEV__ = {
+      state: () => ({ puzzleId: this.def.puzzleId, seed: this.def.seed, phase: this.state.phase, tick: this.state.tick }),
+      dump: () => recorder.toDump(this.state, {}, null),
+      exportJson: () => JSON.stringify(recorder.toDump(this.state, {}, null)),
+      importJson: (text: string) => {
+        const parsed = importDump(text);
+        if (!parsed.ok) return { ok: false, reason: parsed.reason };
+        return replayDump(parsed.dump);
+      },
+      step: () => this.state.tick,
+      batch: (n: number) => batchDiagnose(
+        Array.from({ length: n }, (_, i) => ({ puzzleId: `plumber-batch-${i}`, seed: (0x9e3779b9 * (i + 1)) >>> 0, opts: { mode: 'normal' as const } })),
+        (id, seed, opts) => gen.generateLevel(id, seed, opts),
+      ),
+      rejectToFixture,
+      certify: () => checkDraft(this.def, (d) => solver.diagnose(d)),
+      panelVisible: () => document.querySelector('[data-dev-panel]') !== null,
+      destroy: () => { panel.destroy(); },
+    };
+  }
+
   private exposeTestHook(): void {
     if (!TEST_HOOKS) return;
     (window as unknown as { __PLUMBER__?: unknown }).__PLUMBER__ = {
@@ -1371,6 +1481,8 @@ export class PlumberGame implements GameHandle {
     this.clearFlourish();
     this.root.remove();
     if (TEST_HOOKS) delete (window as unknown as { __PLUMBER__?: unknown }).__PLUMBER__;
+    this.dev?.destroy();
+    if (TEST_HOOKS) delete (window as unknown as { __PLUMBER_DEV__?: unknown }).__PLUMBER_DEV__;
   }
 }
 
