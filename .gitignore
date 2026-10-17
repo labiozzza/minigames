@@ -6,3 +6,6 @@ blob-report/
 *.log
 .DS_Store
 coverage/
+server-data/
+miniGames*.zip
+MiniGames_Plumber_OpenCode_TZ_v1.1_AssetGen.zip

@@ -44,6 +44,13 @@ async function login(email: string): Promise<string> {
 }
 
 describe('auth', () => {
+  it('health is public and gated routes require auth', async () => {
+    const health = await api('/health');
+    expect(health.status).toBe(200);
+    expect(health.body.ok).toBe(true);
+    const gated = await api('/me');
+    expect(gated.status).toBe(401);
+  });
   it('request -> verify -> me; wrong code rejected; brute force locked', async () => {
     const token = await login('player@example.com');
     const me = await api('/me', { headers: AUTH(token) });

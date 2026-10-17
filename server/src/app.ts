@@ -70,6 +70,11 @@ export function createApp(opts: ServerOptions = {}): { server: Server; auth: Aut
       const session = token ? await auth.sessionOf(token) : null;
       const ctx: Ctx = { userId: session?.userId ?? null, isAdmin: session?.role === 'admin' };
 
+      // ---------- health (public, no auth) ----------
+      if (method === 'GET' && url.pathname === '/health') {
+        return send(res, 200, { ok: true, version: 1 });
+      }
+
       // ---------- auth ----------
       if (method === 'POST' && url.pathname === '/auth/otp/request') {
         if (typeof b.email !== 'string' || b.email.length > 320) return send(res, 400, { error: 'bad-email' });

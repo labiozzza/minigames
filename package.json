@@ -17,7 +17,8 @@
     "test:e2e": "playwright test",
     "icons": "node tools/make-icons.mjs",
     "prebuild": "npm run icons",
-    "test:server": "vitest run server/tests --testTimeout 60000"
+    "test:server": "vitest run server/tests --testTimeout 60000",
+    "dev:server": "vite-node server/src/main.ts"
   },
   "dependencies": {
     "phaser": "4.2.1"

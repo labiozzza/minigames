@@ -56,3 +56,24 @@ npx -y serve dist -l 4173
 
 - `/assets/*` (хешированные чанки): `immutable, max-age=1y`.
 - `/sw.js`, `index.html`, `manifest.webmanifest`: `no-cache`.
+
+## Опциональный серверный слой (sync/challenges/share)
+
+Клиент работает офлайн-first без сервера; `server/` — необязательный
+локальный tier (node:http, 0 runtime-зависимостей) для синхронизации,
+испытаний, шаринга и админки. **Не развёрнут** (production-deploy/Postgres/
+домен требуют отдельного разрешения по регламенту).
+
+Локальный preview:
+
+```sh
+npm run dev:server                # vite-node, 127.0.0.1:8099, FileStore -> server-data/
+curl -sS 127.0.0.1:8099/health    # {"ok":true,"version":1}
+npm run test:server               # протокольные тесты
+```
+
+Перед production: включить HTTPS, заменить `FileStore` на Postgres-адаптер
+(интерфейс `Store` готов), подключить клиент к `/games/:id/challenges` и
+`/sync`, вынести секреты OTP/сессий в окружение. Rollback — по версиям
+`/admin` (draft → publish → rollback + audit).
+
