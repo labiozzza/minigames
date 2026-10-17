@@ -1,0 +1,83 @@
+name: ci
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+# CI only: no production deployment, no secrets written anywhere.
+jobs:
+  web:
+    name: typecheck / unit / levels / build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test
+      - run: npm run build
+      - run: npm run check:release
+      - name: mass level certification (>=10k plumber)
+        run: npm run test:levels
+
+  server:
+    name: server + postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    env:
+      PG_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run test:server
+
+  e2e:
+    name: playwright (chromium, desktop + mobile)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+
+  assetgen:
+    name: assetgen reconcile tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+      - run: pip install Pillow==12.3.0
+      - name: assetgen unit tests
+        run: python -m unittest discover -s .opencode/skills/minigames-assetgen/tests -v
+      - name: registry must already be reconciled (idempotent)
+        run: |
+          python .opencode/skills/minigames-assetgen/scripts/assetgen.py reconcile --workspace assetgen-work | tee /tmp/reconcile.json
+          grep -q '"changed": 0' /tmp/reconcile.json

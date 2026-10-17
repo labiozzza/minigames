@@ -8,6 +8,7 @@ interface Dbg {
   animating: boolean;
   historyLen: number;
   stage: string;
+  stages: string[];
   audit: { srcVisible: boolean; srcInBounds: boolean; streamOn: boolean } | null;
 }
 
@@ -73,29 +74,13 @@ test('pour stages: lift, tilt, pour, return + visibility audit (desktop)', async
   await page.locator('.tutorial-card .btn').first().click();
 
   const { f, t } = await findPair(page);
-  // In-page rAF sampler: catches even short phases, immune to Node-side jitter.
-  const sampling = page.evaluate(
-    () =>
-      new Promise<string[]>((resolve) => {
-        const get = () => (window as unknown as { __MG: { dbg: () => { stage: string } } }).__MG.dbg().stage;
-        const seen: string[] = [];
-        let last = 'idle';
-        const start = performance.now();
-        const tick = () => {
-          const s = get();
-          if (s !== last) {
-            seen.push(s);
-            last = s;
-          }
-          if ((s === 'idle' && seen.length > 0) || performance.now() - start > 12000) resolve(seen);
-          else requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
-      }),
-  );
+  // The scene records every stage transition itself (event-driven), so the
+  // assertion never races requestAnimationFrame under load — no phase can be
+  // skipped by a slow sampler.
   await page.keyboard.press(keyFor(f));
   await page.keyboard.press(keyFor(t));
-  const seen = await sampling;
+  await expect.poll(async () => (await dbg(page)).animating, { timeout: 20000 }).toBe(false);
+  const seen = (await dbg(page)).stages;
   // Required order through the flight phases (extra phases like move/settle allowed).
   const order = ['lift', 'tilt', 'pour', 'return'];
   const firstIdx = (s: string): number => seen.indexOf(s);

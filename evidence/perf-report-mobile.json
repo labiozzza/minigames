@@ -1,0 +1,37 @@
+{
+  "generatedAt": "2026-10-17T09:54:14.575Z",
+  "conditions": {
+    "browser": "chromium 156.0.8078.4",
+    "project": "mobile",
+    "viewport": "390x844",
+    "deviceScaleFactor": 2.625,
+    "runs": 6,
+    "measurementWindowMs": 6000,
+    "headless": true,
+    "note": "headless Chromium throttles requestAnimationFrame, so these FPS numbers are a floor, not a device result; real Android/iOS/Safari/Firefox = NOT_RUN (no device)"
+  },
+  "fps": {
+    "median": 16.680000000000017,
+    "p5": 16.65333333333334,
+    "samples": [
+      49,
+      90,
+      120,
+      120,
+      120,
+      120
+    ],
+    "quality": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "targets": {
+    "desktopMedian": 60,
+    "mobileMedian": 30
+  }
+}

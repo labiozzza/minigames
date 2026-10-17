@@ -25,7 +25,7 @@ test('basic tutorial is completable by actions alone; wrong taps are blocked', a
     { timeout: 15000 },
   );
   await expect(page.locator('.tut-ring')).toBeVisible({ timeout: 10000 });
-  await page.screenshot({ path: 'evidence/screenshots/tutorial-tmp.png' });
+  await page.screenshot({ path: 'evidence/screenshots/tutorial-onboarding.png' });
 
   let t0 = await tut(page);
   expect(t0).not.toBe(null);

@@ -87,7 +87,32 @@ export class SortScene extends Phaser.Scene {
   private streamG: Phaser.GameObjects.Graphics | null = null;
   private animToken = 0;
   stage: PourStage = 'idle';
+  /** Event-driven transition log so tests need not race rAF sampling. */
+  stageLog: PourStage[] = [];
   lastAudit: PourAudit | null = null;
+
+  private stageIdx = -1;
+  private static readonly STAGE_ORDER: PourStage[] = ['lift', 'move', 'tilt', 'pour', 'return'];
+
+  private setStage(s: PourStage): void {
+    if (this.stage === s) return;
+    this.stage = s;
+    this.stageLog.push(s);
+  }
+
+  /**
+   * Progress is time-based, so on a starved frame the sampled stage can jump
+   * straight from lift to pour. Log every phase the progress actually crossed
+   * since the previous frame, so the transition log is complete regardless of
+   * frame rate.
+   */
+  private advanceStage(idx: number): void {
+    if (idx > this.stageIdx) {
+      for (let k = this.stageIdx + 1; k <= idx; k += 1) this.stageLog.push(SortScene.STAGE_ORDER[k]);
+      this.stageIdx = idx;
+    }
+    this.stage = SortScene.STAGE_ORDER[idx];
+  }
 
   constructor(view: SceneView) {
     super('water-sort');
@@ -111,7 +136,7 @@ export class SortScene extends Phaser.Scene {
     this.objs = [];
     this.streamG?.destroy(true);
     this.streamG = null;
-    this.stage = 'idle';
+    this.setStage('idle');
   }
 
   private buildTubes(): void {
@@ -353,7 +378,7 @@ export class SortScene extends Phaser.Scene {
       finished = true;
       if (token !== this.animToken) {
         // A rebuild happened mid-flight: snap to the current logical state.
-        this.stage = 'idle';
+        this.setStage('idle');
         this.render();
         done();
         return;
@@ -366,13 +391,13 @@ export class SortScene extends Phaser.Scene {
           f.root.setDepth(0);
         }
         this.streamG?.clear();
-        this.stage = 'idle';
+        this.setStage('idle');
         this.render();
       }
       done();
     };
     if (durMs <= 40) {
-      this.stage = 'idle';
+      this.setStage('idle');
       this.render();
       finish(false);
       return;
@@ -408,6 +433,8 @@ export class SortScene extends Phaser.Scene {
     f.root.setDepth(FRONT_DEPTH);
     streamG.clear();
     this.lastAudit = null;
+    this.stageLog.length = 0;
+    this.stageIdx = -1;
     this.stage = 'lift';
     const phase = { p: 0 };
     const total = pourAnimTotal(count, durMs);
@@ -462,17 +489,19 @@ export class SortScene extends Phaser.Scene {
         f.root.setPosition(x, y);
         f.root.setAngle(tilt * ease(tiltP) * (1 - eBack));
         const wob = Math.sin(pourP * Math.PI) * 0.8;
-        this.stage = back > 0
-          ? 'return'
-          : pourP > 0
-            ? 'pour'
-            : tiltP < 1
-              ? move < 1
-                ? lift < 1
-                  ? 'lift'
-                  : 'move'
-                : 'tilt'
-              : 'tilt';
+        this.advanceStage(
+          back > 0
+            ? 4
+            : pourP > 0
+              ? 3
+              : tiltP < 1
+                ? move < 1
+                  ? lift < 1
+                    ? 0
+                    : 1
+                  : 2
+                : 2,
+        );
         // Per-unit progress: each block visibly drains from the source and
         // grows in the target before the next one starts (no teleporting).
         const uc = Math.min(count, pourP * count);
@@ -521,7 +550,7 @@ export class SortScene extends Phaser.Scene {
           finish(false);
           return;
         }
-        this.stage = 'settle';
+        this.setStage('settle');
         const st = { w: 1 };
         this.tweens.add({
           targets: st,

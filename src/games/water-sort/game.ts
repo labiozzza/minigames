@@ -1055,6 +1055,7 @@ export class WaterSortGame implements GameHandle {
             }
           : null,
         stage: this.scene?.stage ?? 'idle',
+        stages: this.scene?.stageLog ?? [],
         audit: this.scene?.lastAudit ?? null,
         queued: this.queuedPour,
       }),
