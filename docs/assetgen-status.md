@@ -46,3 +46,16 @@
 1. Этап 2: подключить `assets/_placeholder/plumber/` к Phaser-сцене через fallback-loader с dev-бейджем.
 2. При появлении `OPENAI_API_KEY` + бюджет + разрешение: `pip install openai`, `process --allow-paid` по очереди, затем tech→vision→Phaser-integration gate (только после этого `APPROVED`).
 3. Смесители, разделённые каналы, декор, 12–16 коллекционных предметов — заявки после утверждения StyleBible человеком (не из случайных генераций).
+
+## 7. §5 кандидаты графики препятствий/окружения (2026-10-17)
+
+Провайдер доступен через канал `chatgpt-subscription` (инструмент `gpt_imagegen`). Сгенерированы 2 кандидата (medium), прошли только техническую проверку; стиль/интеграция — вручную или vision-ревьюером (гейт §5 → `MANUAL_REVIEW_REQUIRED`). Логика игры продолжает рисовать процедурные примитивы, кандидаты в продакшн-сцену НЕ подключены, пока не одобрены.
+
+| asset_id | kind | статус | файл (candidate) | tech QA |
+|---|---|---|---|---|
+| `obstacle_rock` | obstacle-block (ячейка `blocked`) | MANUAL_REVIEW_REQUIRED | `assetgen-work/finals/obstacle_rock_medium_1.png` | VALID_TECH 256×256 RGBA, bbox [12,17,244,238] |
+| `env_garden_bush` | environment-decor (садовая подставка) | MANUAL_REVIEW_REQUIRED | `assetgen-work/finals/env_garden_bush_medium_1.png` | VALID_TECH 256×256 RGBA, bbox [35,12,220,244] |
+
+- Бюджет: `medium_used` 11 → 13 из 16 (`budget.json`), low без изменений.
+- `reconcile` идемпотентен (второй прогон `changed:0`), 11 `APPROVED` сохранены.
+- Осталось для `APPROVED`: независимый визуальный ревью против эталонов + снимки реальной Phaser-сцены; до этого графический гейт остаётся открытым, примитивы законны как `PLACEHOLDER`.

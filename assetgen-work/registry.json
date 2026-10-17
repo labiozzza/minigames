@@ -4,7 +4,7 @@
   "budget": {
     "low_used": 13,
     "low_limit": 24,
-    "medium_used": 11,
+    "medium_used": 13,
     "medium_limit": 16
   },
   "assets": {
@@ -116,6 +116,34 @@
         "CROPPED_OR_UNSAFE_RIGHT"
       ],
       "state": "approved"
+    },
+    "obstacle_rock": {
+      "status": "MANUAL_REVIEW_REQUIRED",
+      "state": "manual_review_required",
+      "file": "assetgen-work/finals/obstacle_rock_medium_1.png",
+      "source": "assetgen-work/candidates/obstacle_rock_medium_1.png",
+      "tech": "VALID_TECH",
+      "warnings": [],
+      "review_status": "MANUAL_REVIEW_REQUIRED",
+      "kind": "obstacle-block",
+      "version": 1,
+      "prompt_hash": null,
+      "note": "obstacle tile candidate (blocked cells); style/Phaser integration pending human or vision review per assetgen gate 5",
+      "sha256_candidate": "87f703b6b30eef45b20336091c9afc6cba0029c656bf7a2640b0afdf5acb7bd7"
+    },
+    "env_garden_bush": {
+      "status": "MANUAL_REVIEW_REQUIRED",
+      "state": "manual_review_required",
+      "file": "assetgen-work/finals/env_garden_bush_medium_1.png",
+      "source": "assetgen-work/candidates/env_garden_bush_medium_1.png",
+      "tech": "VALID_TECH",
+      "warnings": [],
+      "review_status": "MANUAL_REVIEW_REQUIRED",
+      "kind": "environment-decor",
+      "version": 1,
+      "prompt_hash": null,
+      "note": "garden decor candidate; style/Phaser integration pending human or vision review per assetgen gate 5",
+      "sha256_candidate": "478399d50f1bed4f163015937866e245c76e5681d17c9520cbc2d142a46a7751"
     }
   },
   "integration": {
@@ -760,7 +788,7 @@
       "tech": "VALID_TECH"
     }
   },
-  "generated_at": "2026-10-17T09:36:28.207151+00:00",
+  "generated_at": "2026-10-17T14:23:47.138547+00:00",
   "states": [
     "approved",
     "generating",

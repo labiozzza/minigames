@@ -1,0 +1,29 @@
+{
+  "id": "env_garden_bush",
+  "request": {
+    "game_id": "plumber",
+    "asset_id": "env_garden_bush",
+    "style_id": "plumber_2_5d_v1",
+    "kind": "environment-decor",
+    "logical_cell_px": 256,
+    "port_mask": {},
+    "prompt": null
+  },
+  "status": "MANUAL_REVIEW_REQUIRED",
+  "state": "manual_review_required",
+  "attempts": 1,
+  "max_attempts": 3,
+  "placeholder": null,
+  "created_at": "2026-10-17T14:23:25.390733+00:00",
+  "history": [
+    {
+      "timestamp": "2026-10-17T14:23:25.390733+00:00",
+      "event": "generated",
+      "to": "manual_review_required",
+      "reason": "gpt-image-subscription candidate, VALID_TECH; awaiting style/Phaser review"
+    }
+  ],
+  "approved": false,
+  "origin": "gpt-image-subscription",
+  "source": "assetgen-work/finals/env_garden_bush_medium_1.png"
+}
