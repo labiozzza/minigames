@@ -1,0 +1,35 @@
+{
+  "levelsChecked": 10350,
+  "fallback": 0,
+  "unsolvable": 0,
+  "nontrivialFails": 0,
+  "determinismFails": 0,
+  "distinctFingerprints": 9754,
+  "overlappingFingerprints": 327,
+  "overlapRate": 0.0335,
+  "meanPar": 8.818,
+  "maxPar": 27,
+  "sizeDistribution": {
+    "3x3": 1200,
+    "4x3": 865,
+    "5x5": 6450,
+    "6x6": 1835
+  },
+  "kind": "corpus",
+  "modes": [
+    "child",
+    "normal",
+    "expert"
+  ],
+  "families": [
+    "path",
+    "leakfix",
+    "valve",
+    "filter",
+    "mixer",
+    "program",
+    "carry",
+    "multiflow",
+    "exact"
+  ]
+}
