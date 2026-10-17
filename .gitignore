@@ -12,3 +12,7 @@ MiniGames_Plumber_OpenCode_TZ_v1.1_AssetGen.zip
 
 server-data-e2e/
 server-data/
+
+# Python bytecode from the assetgen skill
+__pycache__/
+*.pyc
