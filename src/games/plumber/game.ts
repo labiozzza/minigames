@@ -31,6 +31,12 @@ import { PlumberScene } from './presentation/scene';
 
 const TICK_MS = 200;
 
+// Test/introspection hooks exist only in dev builds or when a test bundle is
+// explicitly requested (VITE_TEST_HOOKS=1). Public release builds expose
+// neither `__PLUMBER__` nor any solve() shortcut. Replaced at build time.
+declare const __TEST_HOOKS__: boolean;
+const TEST_HOOKS = __TEST_HOOKS__;
+
 export class PlumberGame implements GameHandle {
   private ctx!: GameContext;
   private level!: number;
@@ -831,6 +837,7 @@ export class PlumberGame implements GameHandle {
   }
 
   private exposeTestHook(): void {
+    if (!TEST_HOOKS) return;
     (window as unknown as { __PLUMBER__?: unknown }).__PLUMBER__ = {
       phase: () => this.state.phase,
       level: () => this.level,
@@ -902,6 +909,6 @@ export class PlumberGame implements GameHandle {
     this.audio.dispose();
     this.toastRoot?.remove();
     this.root.remove();
-    delete (window as unknown as { __PLUMBER__?: unknown }).__PLUMBER__;
+    if (TEST_HOOKS) delete (window as unknown as { __PLUMBER__?: unknown }).__PLUMBER__;
   }
 }

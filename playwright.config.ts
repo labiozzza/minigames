@@ -12,10 +12,10 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   webServer: {
-    command: 'npm run preview',
+    command: 'npm run build:test && npm run preview',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: true,
-    timeout: 60000,
+    timeout: 120000,
   },
   projects: [
     { name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } } },

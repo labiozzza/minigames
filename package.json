@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "build:test": "VITE_TEST_HOOKS=1 tsc -p tsconfig.json --noEmit && VITE_TEST_HOOKS=1 vite build",
+    "check:release": "node tools/check-no-testhooks.mjs dist",
     "preview": "vite preview --port 4173 --strictPort --host 127.0.0.1",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit --pretty false",
@@ -26,6 +28,8 @@
   "devDependencies": {
     "@playwright/test": "^1.52.0",
     "@types/node": "^26.6.5",
+    "@types/pg": "^8.23.1",
+    "pg": "^8.23.1",
     "typescript": "~5.6.3",
     "vite": "^6.3.5",
     "vite-plugin-pwa": "^1.0.0",

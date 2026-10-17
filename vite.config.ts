@@ -1,8 +1,16 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-export default defineConfig({
+// Test hooks (window.__PLUMBER__, solve shortcuts) are compiled in ONLY for
+// dev or explicit test builds (VITE_TEST_HOOKS=1). In release builds the flag
+// is the literal `false`, so esbuild removes all hook code entirely.
+const testHooks = process.env.VITE_TEST_HOOKS === '1';
+
+export default defineConfig(({ command }) => ({
   base: './',
+  define: {
+    __TEST_HOOKS__: JSON.stringify(testHooks || command === 'serve'),
+  },
   plugins: [
     VitePWA({
       registerType: 'prompt',
@@ -41,4 +49,4 @@ export default defineConfig({
     chunkSizeWarningLimit: 1200,
   },
   worker: { format: 'es' },
-});
+}));

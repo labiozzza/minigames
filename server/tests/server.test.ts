@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AddressInfo } from 'node:net';
 import { MemoryStore, type Store } from '../../server/src/store';
 import { createApp } from '../../server/src/app';
-import { AuthService } from '../../server/src/auth';
+import { AuthService, hashSecret } from '../../server/src/auth';
 import type { Server } from 'node:http';
 
 let base = '';
@@ -21,7 +21,7 @@ async function api(path: string, init?: RequestInit): Promise<{ status: number; 
 const AUTH = (t: string) => ({ Authorization: `Bearer ${t}` });
 
 beforeAll(async () => {
-  const app = createApp({ store: new MemoryStore() });
+  const app = createApp({ store: new MemoryStore(), exposeCodes: true });
   server = app.server;
   auth = app.auth;
   store = app.store;
@@ -79,6 +79,10 @@ describe('auth', () => {
     const r = await api('/guest/link', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ guestId: 'g-123' }) });
     expect(r.status).toBe(200);
   });
+  it('production auth config never exposes OTP codes', () => {
+    const prod = new AuthService(new MemoryStore(), { exposeCodes: false });
+    expect(prod.lastCodeFor('any@example.com')).toBeUndefined();
+  });
 });
 
 describe('saves sync', () => {
@@ -108,6 +112,11 @@ describe('saves sync', () => {
 });
 
 describe('challenges and share', () => {
+  const validDef = {
+    seed: 42, puzzleId: 'lvl-1', mode: 'normal', rulesetVersion: 'plumber-rules/2',
+    generatorVersion: 'plumber-gen/0.2-stage3', gridW: 3, gridH: 3,
+    cells: [1, 2, 3], sources: [{ cell: 0 }], receivers: [{ cell: 2, kind: 'auto' }],
+  };
   it('manifest deterministic; share roundtrip; oversize rejected', async () => {
     const token = await login('ch@example.com');
     const m1 = await api('/games/plumber/challenges?mode=normal', { headers: AUTH(token) });
@@ -117,12 +126,56 @@ describe('challenges and share', () => {
     const one = await api(`/games/plumber/challenges/${daily}`, { headers: AUTH(token) });
     expect(one.status).toBe(200);
     expect((one.body.challenge as { seed: number }).seed).toBeGreaterThan(0);
-    const sh = await api('/share', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ def: { cells: [1, 2, 3] } }) });
+    const sh = await api('/share', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ def: { ...validDef } }) });
     expect(sh.status).toBe(200);
     const got = await api(`/share/${sh.body.code}`, { headers: AUTH(token) });
-    expect(got.body.def).toEqual({ cells: [1, 2, 3] });
+    expect(got.body.def).toMatchObject({ seed: 42, gridW: 3 });
     const big = await api('/share', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ def: { blob: 'x'.repeat(20000) } }) });
     expect(big.status).toBe(413);
+  });
+  it('rejects malformed share definitions before write (fuzz)', async () => {
+    const token = await login('fuzz@example.com');
+    const cases = [
+      { cells: [1, 2, 3] },
+      { ...validDef, gridW: 999 },
+      { ...validDef, seed: 'x' },
+      { ...validDef, receivers: [{ cell: 1, kind: 'bogus' }] },
+      null,
+    ];
+    for (const def of cases) {
+      const r = await api('/share', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ def }) });
+      expect([400, 413]).toContain(r.status);
+    }
+  });
+});
+
+describe('sync validation & hardening', () => {
+  it('rejects malformed events, accepts valid ones', async () => {
+    const token = await login('val@example.com');
+    const r = await api('/games/plumber/sync', {
+      method: 'POST', headers: AUTH(token),
+      body: JSON.stringify({
+        events: [
+          { uuid: 'ok1', kind: 'win', level: 2, stars: 3, mode: 'child', family: 'path' },
+          { uuid: 'bad1', kind: 'win', level: -1, stars: 9, mode: 'nope' },
+          { uuid: 'bad2', kind: 'teleport', level: 1 },
+          { kind: 'win', level: 1, stars: 1, mode: 'normal' },
+        ],
+        baseVersion: 1,
+      }),
+    });
+    expect(r.body.applied).toBe(1);
+    expect(r.body.rejected).toBe(3);
+    expect(r.body.provisional).toBe(true);
+  });
+  it('rejects oversized body with 413 (no crash)', async () => {
+    const r = await api('/games/plumber/sync', {
+      method: 'POST',
+      body: JSON.stringify({ events: [], pad: 'x'.repeat(100000) }),
+    });
+    expect(r.status).toBe(413);
+    const health = await api('/health');
+    expect(health.status).toBe(200);
   });
 });
 
@@ -133,7 +186,7 @@ describe('config, admin, telemetry', () => {
     expect(forb.status).toBe(403);
     await store.upsertUser({ id: 'admin-1', email: 'admin@example.com', role: 'admin', createdAt: Date.now() });
     const adminToken = 'admintoken123';
-    await store.putSession({ token: adminToken, userId: 'admin-1', role: 'admin', expiresAt: Date.now() + 3600000 });
+    await store.putSession({ tokenHash: hashSecret(adminToken), userId: 'admin-1', role: 'admin', expiresAt: Date.now() + 3600000 });
     const A = AUTH(adminToken);
     const draft = await api('/admin/config/draft?game=plumber', { headers: A });
     expect(draft.status).toBe(200);
@@ -147,14 +200,33 @@ describe('config, admin, telemetry', () => {
     const audit = await api('/admin/audit', { headers: A });
     expect((audit.body.audit as unknown[]).length).toBeGreaterThanOrEqual(3);
   });
-  it('telemetry requires consent and strips PII', async () => {
+  it('telemetry requires versioned consent and an allowlist', async () => {
     const token = await login('tele@example.com');
-    const no = await api('/telemetry', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ events: [{ t: 1 }] }) });
+    const no = await api('/telemetry', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ events: [{ type: 'level_win' }] }) });
     expect(no.body.ok).toBe(false);
+    const bare = await api('/telemetry', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ consent: true, events: [{ type: 'level_win' }] }) });
+    expect(bare.body.ok).toBe(false);
     const yes = await api('/telemetry', {
       method: 'POST', headers: AUTH(token),
-      body: JSON.stringify({ consent: true, events: [{ t: 1, email: 'x@y.z', password: 'p' }] }),
+      body: JSON.stringify({
+        consent: { granted: true, version: '1', scope: 'analytics' },
+        events: [
+          { type: 'level_win', level: 3, stars: 3, email: 'x@y.z', password: 'p', nested: { a: 1 } },
+          { type: 'not_allowed', level: 1 },
+        ],
+      }),
     });
     expect(yes.body).toEqual({ ok: true, accepted: 1 });
+  });
+  it('sessions are hashed at rest and reject expired tokens', async () => {
+    const token = await login('exp@example.com');
+    const me = await api('/me', { headers: AUTH(token) });
+    expect(me.status).toBe(200);
+    // Stored session must be keyed by hash, not the bearer token.
+    const direct = await store.getSession(token);
+    expect(direct).toBeNull();
+    await store.putSession({ tokenHash: hashSecret('expiredtok'), userId: 'x', role: 'player', expiresAt: Date.now() - 1000 });
+    const exp = await api('/me', { headers: AUTH('expiredtok') });
+    expect(exp.status).toBe(401);
   });
 });
