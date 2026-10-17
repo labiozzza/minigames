@@ -13,7 +13,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: 'MG_TEST_HOOKS=1 MG_CORS_ORIGIN=* PORT=8787 DATA_DIR=./server-data-e2e npx vite-node server/src/main.ts',
+      command: 'MG_TEST_HOOKS=1 MG_CORS_ORIGIN=* PORT=8787 DATA_DIR=./server-data-e2e ADMIN_EMAILS=admin@minigames.test MG_OTP_NOLIMIT=1 npx vite-node server/src/main.ts',
       url: 'http://127.0.0.1:8787/health',
       reuseExistingServer: true,
       timeout: 60000,

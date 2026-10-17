@@ -135,6 +135,13 @@ export interface LevelDefinition {
   difficultyEvidence: { pathLength: number; rotatable: number; branches: number };
   /** Par rotations for stars (defaults to witness rotation count). */
   par?: number;
+  /**
+   * §14: published admin config this level was generated under. A level keeps
+   * its pinned revision for its whole life, so publishing a new config only
+   * affects newly generated puzzles.
+   */
+  configRevision?: number;
+  configChecksum?: string;
 }
 
 export interface MixerStock {

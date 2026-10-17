@@ -24,6 +24,7 @@ import {
   type RuntimeState,
 } from './domain/model';
 import { generateLevel } from './domain/generator';
+import { loadRemoteConfig } from './remote-config';
 import { hintFromWitness } from './domain/solver';
 import { computeStars, familyForMode, parseShareCode, shareCode, unlockedCollectibles, utcDayString, COLLECTIBLES, THEMES, themeForGoals, type Mode, type ProgressSummary, type ThemeId } from './domain/progression';
 import { archiveEntries, CHALLENGE_HORIZON_DAYS, currentDaily, currentWeekly, resolveChallenge, weekStartUTC } from './domain/challenges';
@@ -78,6 +79,9 @@ export class PlumberGame implements GameHandle {
   private lastLeak = -1;
   private lastDelivered = 0;
   private renderer: 'webgl' | 'canvas' | null = null;
+  /** §14: published config this session's new levels pin. */
+  private configRevision = 1;
+  private configChecksum = '';
 
   private constructor() {}
 
@@ -89,6 +93,12 @@ export class PlumberGame implements GameHandle {
     const explicit = ctx.mode === 'child' || ctx.mode === 'normal' || ctx.mode === 'expert' ? (ctx.mode as Mode) : undefined;
     g.mode = explicit ?? slot.selected ?? 'normal';
     g.buildChrome();
+    // §14: pin the published config revision (best-effort; offline keeps local).
+    const pin = await loadRemoteConfig(PLUMBER_ID).catch(() => null);
+    if (pin) {
+      g.configRevision = pin.revision;
+      g.configChecksum = pin.checksum;
+    }
     g.loadOrGenerate();
     g.initPhaser();
     g.exposeTestHook();
@@ -197,7 +207,7 @@ export class PlumberGame implements GameHandle {
         this.challengeLevel = { kind: spec.kind, day: spec.day, id: spec.id };
         this.mode = spec.mode;
         this.level = 1;
-        this.def = generateLevel(spec.id, spec.seed, { mode: spec.mode, family: spec.family });
+        this.def = this.pinConfig(generateLevel(spec.id, spec.seed, { mode: spec.mode, family: spec.family }));
         this.state = createRuntime(this.def);
         this.undoStack = [];
         this.redoStack = [];
@@ -256,7 +266,14 @@ export class PlumberGame implements GameHandle {
    */
   private generateForMode(mode: Mode, level: number): LevelDefinition {
     const salt = mode === 'child' ? 0x11 : mode === 'expert' ? 0x33 : 0x22;
-    return generateLevel(`plumber-${mode}-lvl-${level}`, ((level * 2654435761) ^ salt) >>> 0, { mode, family: familyForMode(mode, level) });
+    return this.pinConfig(generateLevel(`plumber-${mode}-lvl-${level}`, ((level * 2654435761) ^ salt) >>> 0, { mode, family: familyForMode(mode, level) }));
+  }
+
+  /** §14: stamp the pinned revision on freshly generated levels only. */
+  private pinConfig(def: LevelDefinition): LevelDefinition {
+    def.configRevision = this.configRevision;
+    def.configChecksum = this.configChecksum;
+    return def;
   }
 
   private defFromSave(saved: PlumberSessionSave): LevelDefinition | null {
@@ -291,6 +308,8 @@ export class PlumberGame implements GameHandle {
         family: (d.family ?? 'path') as LevelDefinition['family'],
         gridW: d.gridW,
         gridH: d.gridH,
+        configRevision: typeof d.configRevision === 'number' ? d.configRevision : undefined,
+        configChecksum: typeof d.configChecksum === 'string' ? d.configChecksum : undefined,
         cells,
         sources: d.sources.map((s) => ({ cell: s.cell, color: s.color, portions: s.portions, enabled: s.enabled })),
         receivers: d.receivers.map((r) => ({ cell: r.cell, color: r.color, goal: r.goal, kind: (r.kind ?? 'auto') as LevelDefinition['receivers'][number]['kind'], outlet: r.outlet as LevelDefinition['receivers'][number]['outlet'], releaseEvery: r.releaseEvery, bufferCap: r.bufferCap })),
@@ -1228,6 +1247,8 @@ export class PlumberGame implements GameHandle {
         family: this.def.family,
         gridW: this.def.gridW,
         gridH: this.def.gridH,
+        configRevision: this.def.configRevision,
+        configChecksum: this.def.configChecksum,
         dynamic: this.def.dynamic,
         programmed: this.def.programmed,
         program: (this.def.program ?? []).map((c) => ({ ...c })),

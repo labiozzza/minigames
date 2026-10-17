@@ -65,7 +65,7 @@
 | 59 | D | Единый UTC-календарь и офлайн-кэш задач | 01 §- | — | — | UTC+cache | PASS |
 | 60 | D | Необязательные push и внутриигровые уведомления | 01 §- | — | — | IN_PROGRESS |
 | 61 | D | Сейчас бесплатно и без рекламы, монетизация лишь точка расширения | 01 §- | — | — | free no ads | PASS |
-| 62 | D | Админ-панель с черновиками, проверкой, версиями и откатом | 01 §- | — | — | IN_PROGRESS |
+| 62 | D | Админ-панель с черновиками, проверкой, версиями и откатом | 01 §14 | server/src/{config-schema,certify}.ts, admin.html | strict schema 422 + certified preview + checksum/revision/changed fields + immutable history + rollback-as-new-version; player → 403; e2e admin 2/2 | PASS |
 | 63 | D | Гибридный конвейер графических ассетов; без заглушек при сдаче | 01 §8 | src/games/plumber/ | 8/8 APPROVED, usesFallback=false | PASS |
 | 64 | B | Замкнутые контуры без бесконечной циркуляции | 01 §5 | — | src/games/plumber/domain/ | tests/unit/plumber-domain.test.ts + tests/levels/plumber-mass.test.ts (1200/1200 WON, volume ok) | PASS |
 | 65 | B | Одинаковые жидкости объединяются, разные конфликтуют вне смесителя | 01 §5 | — | src/games/plumber/domain/ | tests/unit/plumber-domain.test.ts + tests/levels/plumber-mass.test.ts (1200/1200 WON, volume ok) | PASS |

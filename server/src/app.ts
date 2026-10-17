@@ -8,6 +8,8 @@ import { randomBytes } from 'node:crypto';
 import { MemoryStore, type Store } from './store';
 import { AuthService } from './auth';
 import { cleanTelemetry, validConsent, validateShareDef, validateSyncEvents } from './validate';
+import { changedFields, checksumConfig, defaultConfig, validateConfig } from './config-schema';
+import { certifySeeds, defaultSeeds } from './certify';
 
 export interface ServerOptions {
   store?: Store;
@@ -18,6 +20,10 @@ export interface ServerOptions {
   maxBody?: number;
   /** Allowed CORS origin for local dev/E2E ('*' or explicit). null disables. */
   cors?: string | null;
+  /** Emails granted the admin role (from ADMIN_EMAILS, never hard-coded). */
+  adminEmails?: string[];
+  /** Test/E2E only: disable OTP request rate limiting (never production). */
+  noOtpRateLimit?: boolean;
 }
 
 interface Ctx {
@@ -37,8 +43,7 @@ function send(res: ServerResponse, status: number, body: unknown): void {
   res.end(text);
 }
 
-function corsHeaders(origin: string | null, allow: string | null): Record<string, string> {
-  if (!allow) return {};
+function corsHeaders(origin: string | null, allow: string | null): Record<string, string> {  if (!allow) return {};
   const value = allow === '*' ? '*' : origin && origin === allow ? allow : '';
   if (!value) return {};
   return {
@@ -48,6 +53,23 @@ function corsHeaders(origin: string | null, allow: string | null): Record<string
     'Access-Control-Max-Age': '600',
     Vary: 'Origin',
   };
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/** Admin-supplied seeds: bounded, integer, deduplicated, deterministic fallback. */
+function parseSeeds(raw: unknown, fallback: number[]): number[] {
+  if (!Array.isArray(raw)) return fallback;
+  const out: number[] = [];
+  for (const x of raw) {
+    if (typeof x !== 'number' || !Number.isFinite(x)) continue;
+    const n = Math.floor(x) >>> 0;
+    if (!out.includes(n)) out.push(n);
+    if (out.length >= 64) break;
+  }
+  return out.length ? out : fallback;
 }
 
 function readJson(req: IncomingMessage, maxBody: number): Promise<unknown> {
@@ -95,7 +117,7 @@ export function createApp(opts: ServerOptions = {}): { server: Server; auth: Aut
   const store = opts.store ?? new MemoryStore();
   const now = opts.now ?? Date.now;
   const maxBody = opts.maxBody ?? 65536;
-  const auth = new AuthService(store, { now, exposeCodes: opts.exposeCodes ?? false });
+  const auth = new AuthService(store, { now, exposeCodes: opts.exposeCodes ?? false, adminEmails: opts.adminEmails ?? [], noRateLimit: opts.noOtpRateLimit ?? false });
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const origin = typeof req.headers.origin === 'string' ? req.headers.origin : null;
@@ -142,6 +164,18 @@ export function createApp(opts: ServerOptions = {}): { server: Server; auth: Aut
         if (!r) return send(res, 401, { error: 'invalid-code' });
         return send(res, 200, r);
       }
+      let m: RegExpExecArray | null;
+      // ---------- public config (no auth: clients read the published revision) ----------
+      m = /^\/games\/([a-z-]+)\/config$/.exec(url.pathname);
+      if (method === 'GET' && m) {
+        const rec = await store.getConfig(m[1]);
+        // Levels pin (revision, checksum) so a published change only affects
+        // newly generated puzzles, never the one already in progress.
+        const config = rec.checksum ? rec.config : defaultConfig(m[1]);
+        const checksum = rec.checksum || checksumConfig(config);
+        return send(res, 200, { config: { version: rec.version, revision: rec.version, checksum, config } });
+      }
+
       if (!ctx.userId) return send(res, 401, { error: 'auth-required' });
 
       // ---------- profile ----------
@@ -155,7 +189,7 @@ export function createApp(opts: ServerOptions = {}): { server: Server; auth: Aut
       }
 
       // ---------- saves & sync ----------
-      let m = /^\/games\/([a-z-]+)\/save$/.exec(url.pathname);
+      m = /^\/games\/([a-z-]+)\/save$/.exec(url.pathname);
       if (method === 'GET' && m) {
         return send(res, 200, { save: await store.getSave(ctx.userId, m[1]) });
       }
@@ -209,37 +243,59 @@ export function createApp(opts: ServerOptions = {}): { server: Server; auth: Aut
         return send(res, 200, { def: s.def });
       }
 
-      // ---------- public config ----------
-      m = /^\/games\/([a-z-]+)\/config$/.exec(url.pathname);
-      if (method === 'GET' && m) {
-        return send(res, 200, { config: await store.getConfig(m[1]) });
-      }
-
       // ---------- admin ----------
       if (url.pathname.startsWith('/admin/')) {
-        if (!ctx.isAdmin) return send(res, 403, { error: 'forbidden' });
         const game = typeof b.game === 'string' ? b.game : 'plumber';
+        if (method === 'GET' && url.pathname === '/admin/whoami') {
+          return send(res, 200, { isAdmin: ctx.isAdmin, userId: ctx.userId });
+        }
+        if (!ctx.isAdmin) return send(res, 403, { error: 'forbidden' });
         if (method === 'GET' && url.pathname === '/admin/config/draft') {
-          return send(res, 200, { draft: await store.getDraft(game) });
+          return send(res, 200, { draft: await store.getDraft(game), published: await store.getConfig(game) });
         }
         if (method === 'PUT' && url.pathname === '/admin/config/draft') {
           if (typeof b.draft !== 'object' || !b.draft) return send(res, 400, { error: 'bad-draft' });
-          await store.putDraft(game, b.draft, ctx.userId, now());
-          return send(res, 200, { ok: true });
+          const v = validateConfig(game, b.draft);
+          if (!v.ok || !v.config) return send(res, 422, { error: 'invalid-config', errors: v.errors });
+          await store.putDraft(game, v.config, ctx.userId ?? 'admin', now());
+          return send(res, 200, { ok: true, config: v.config, checksum: checksumConfig(v.config) });
         }
         if (method === 'POST' && url.pathname === '/admin/config/preview') {
-          const seeds = Array.isArray(b.seeds) ? (b.seeds as unknown[]).filter((x): x is number => typeof x === 'number').slice(0, 8) : [1, 2, 3];
-          return send(res, 200, { preview: { game, seeds, note: 'client validates seeds against draft before publish' } });
+          const raw = isPlainObject(b.draft) ? b.draft : (await store.getDraft(game))?.draft;
+          const v = validateConfig(game, raw);
+          if (!v.ok || !v.config) return send(res, 422, { error: 'invalid-config', errors: v.errors });
+          const seeds = parseSeeds(b.seeds, defaultSeeds(8));
+          const report = certifySeeds(game, v.config, seeds);
+          return send(res, 200, {
+            preview: { game, checksum: checksumConfig(v.config), seeds, report, levels: report.results },
+            errors: [],
+          });
         }
         if (method === 'POST' && url.pathname === '/admin/config/publish') {
-          const v = await store.publishConfig(game, ctx.userId, now());
-          if (!v) return send(res, 409, { error: 'no-draft' });
-          return send(res, 200, { version: v });
+          const draftRec = await store.getDraft(game);
+          if (!draftRec) return send(res, 409, { error: 'no-draft' });
+          const v = validateConfig(game, draftRec.draft);
+          if (!v.ok || !v.config) return send(res, 422, { error: 'invalid-config', errors: v.errors });
+          const minSeeds = typeof b.minSeeds === 'number' && Number.isInteger(b.minSeeds) && b.minSeeds > 0 ? Math.min(b.minSeeds, 64) : 8;
+          const seeds = parseSeeds(b.seeds, defaultSeeds(minSeeds));
+          if (seeds.length < minSeeds) return send(res, 422, { error: 'too-few-seeds', need: minSeeds, got: seeds.length });
+          const report = certifySeeds(game, v.config, seeds);
+          if (!report.ok) return send(res, 422, { error: 'certification-failed', report });
+          const prev = await store.getConfig(game);
+          const version = await store.publishConfig(game, ctx.userId ?? 'admin', now(), {
+            checksum: checksumConfig(v.config),
+            changes: changedFields(prev.config, v.config),
+          });
+          if (!version) return send(res, 409, { error: 'no-draft' });
+          return send(res, 200, { version: await store.getConfig(game), report });
         }
         if (method === 'POST' && url.pathname === '/admin/config/rollback') {
-          const v = await store.rollbackConfig(game, ctx.userId, now());
-          if (!v) return send(res, 409, { error: 'no-history' });
-          return send(res, 200, { version: v });
+          const version = await store.rollbackConfig(game, ctx.userId ?? 'admin', now());
+          if (!version) return send(res, 409, { error: 'no-history' });
+          return send(res, 200, { version: await store.getConfig(game) });
+        }
+        if (method === 'GET' && url.pathname === '/admin/config/history') {
+          return send(res, 200, { history: await store.getHistory(game) });
         }
         if (method === 'GET' && url.pathname === '/admin/audit') {
           return send(res, 200, { audit: await store.getAudit(100) });

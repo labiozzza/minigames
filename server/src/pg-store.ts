@@ -3,7 +3,7 @@
 // inserts history/audit atomically. Requires an explicit connection string —
 // it never falls back to a fake in-memory store.
 import { Pool, type PoolClient } from 'pg';
-import { applyEvent, type OtpRec, type SaveRec, type SessionRec, type ShareRec, type Store, type UserRec } from './store';
+import { applyEvent, type ConfigRec, type OtpRec, type SaveRec, type SessionRec, type ShareRec, type Store, type UserRec } from './store';
 import { migrate } from './migrate';
 
 function blankSave(): SaveRec {
@@ -180,10 +180,33 @@ export class PgStore implements Store {
     await this.pool.query('UPDATE shares SET hits=hits+1 WHERE code=$1', [code]);
     return { def: row.def, owner: row.owner, createdAt: Number(row.created_at), hits: row.hits };
   }
-  async getConfig(gameId: string): Promise<{ version: number; config: unknown }> {
-    const r = await this.pool.query('SELECT version, config FROM configs WHERE game_id=$1', [gameId]);
-    if (!r.rowCount) return { version: 1, config: { game: gameId, families: 'default' } };
-    return { version: r.rows[0].version, config: r.rows[0].config };
+  async getConfig(gameId: string): Promise<ConfigRec> {
+    const r = await this.pool.query('SELECT version, checksum, config, changes, by_id, at FROM configs WHERE game_id=$1', [gameId]);
+    if (!r.rowCount)
+      return { version: 1, checksum: '', config: { game: gameId, families: 'default' }, changes: [], by: 'system', at: 0 };
+    const row = r.rows[0];
+    return {
+      version: row.version,
+      checksum: row.checksum ?? '',
+      config: row.config,
+      changes: Array.isArray(row.changes) ? row.changes : [],
+      by: row.by_id ?? 'system',
+      at: Number(row.at ?? 0),
+    };
+  }
+  async getHistory(gameId: string): Promise<ConfigRec[]> {
+    const r = await this.pool.query(
+      'SELECT version, checksum, config, changes, by_id, at FROM config_history WHERE game_id=$1 ORDER BY version ASC',
+      [gameId],
+    );
+    return r.rows.map((row) => ({
+      version: row.version,
+      checksum: row.checksum ?? '',
+      config: row.config,
+      changes: Array.isArray(row.changes) ? row.changes : [],
+      by: row.by_id ?? 'system',
+      at: Number(row.at ?? 0),
+    }));
   }
   async getDraft(gameId: string): Promise<{ draft: unknown; updatedBy: string; updatedAt: number } | null> {
     const r = await this.pool.query('SELECT draft, updated_by, updated_at FROM config_drafts WHERE game_id=$1', [gameId]);
@@ -208,7 +231,7 @@ export class PgStore implements Store {
       client.release();
     }
   }
-  async publishConfig(gameId: string, by: string, ts: number): Promise<number | null> {
+  async publishConfig(gameId: string, by: string, ts: number, meta: { checksum: string; changes: string[] } = { checksum: '', changes: [] }): Promise<number | null> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -217,18 +240,25 @@ export class PgStore implements Store {
         await client.query('ROLLBACK');
         return null;
       }
-      const cur = await client.query('SELECT version, config FROM configs WHERE game_id=$1 FOR UPDATE', [gameId]);
+      const cur = await client.query('SELECT version, checksum, config, changes, by_id, at FROM configs WHERE game_id=$1 FOR UPDATE', [gameId]);
       const curVersion = cur.rowCount ? cur.rows[0].version : 1;
       const curConfig = cur.rowCount ? cur.rows[0].config : {};
-      await client.query('INSERT INTO config_history(game_id, version, config, archived_at) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING', [gameId, curVersion, JSON.stringify(curConfig), ts]);
+      const curChecksum = cur.rowCount ? cur.rows[0].checksum ?? '' : '';
+      const curChanges = cur.rowCount && Array.isArray(cur.rows[0].changes) ? cur.rows[0].changes : [];
+      const curBy = cur.rowCount ? cur.rows[0].by_id ?? 'system' : 'system';
+      const curAt = cur.rowCount ? Number(cur.rows[0].at ?? 0) : 0;
+      await client.query(
+        'INSERT INTO config_history(game_id, version, config, checksum, changes, by_id, at) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING',
+        [gameId, curVersion, JSON.stringify(curConfig), curChecksum, JSON.stringify(curChanges), curBy, curAt],
+      );
       const version = curVersion + 1;
       await client.query(
-        `INSERT INTO configs(game_id, version, config) VALUES($1,$2,$3)
-         ON CONFLICT (game_id) DO UPDATE SET version=EXCLUDED.version, config=EXCLUDED.config`,
-        [gameId, version, JSON.stringify(d.rows[0].draft)],
+        `INSERT INTO configs(game_id, version, checksum, config, changes, by_id, at) VALUES($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (game_id) DO UPDATE SET version=EXCLUDED.version, checksum=EXCLUDED.checksum, config=EXCLUDED.config, changes=EXCLUDED.changes, by_id=EXCLUDED.by_id, at=EXCLUDED.at`,
+        [gameId, version, meta.checksum, JSON.stringify(d.rows[0].draft), JSON.stringify(meta.changes), by, ts],
       );
       await client.query('DELETE FROM config_drafts WHERE game_id=$1', [gameId]);
-      await client.query('INSERT INTO audit(ts, actor, action, game, detail) VALUES($1,$2,$3,$4,$5)', [ts, by, 'publish', gameId, JSON.stringify({ version })]);
+      await client.query('INSERT INTO audit(ts, actor, action, game, detail) VALUES($1,$2,$3,$4,$5)', [ts, by, 'publish', gameId, JSON.stringify({ version, checksum: meta.checksum, changes: meta.changes })]);
       await client.query('COMMIT');
       return version;
     } catch (err) {
@@ -242,19 +272,31 @@ export class PgStore implements Store {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const prev = await client.query('SELECT version, config FROM config_history WHERE game_id=$1 ORDER BY version DESC LIMIT 1 FOR UPDATE', [gameId]);
+      const prev = await client.query(
+        'SELECT version, checksum, config, changes, by_id, at FROM config_history WHERE game_id=$1 ORDER BY version DESC LIMIT 1 FOR UPDATE',
+        [gameId],
+      );
       if (!prev.rowCount) {
         await client.query('ROLLBACK');
         return null;
       }
-      const { version, config } = prev.rows[0];
-      await client.query('DELETE FROM config_history WHERE game_id=$1 AND version=$2', [gameId, version]);
+      const p = prev.rows[0];
+      const cur = await client.query('SELECT version, checksum, config, changes, by_id, at FROM configs WHERE game_id=$1 FOR UPDATE', [gameId]);
+      const curVersion = cur.rowCount ? cur.rows[0].version : 1;
+      // Keep the restored snapshot in history too: rollback never deletes audit trail.
+      await client.query('DELETE FROM config_history WHERE game_id=$1 AND version=$2', [gameId, p.version]);
+      const curChanges = cur.rowCount && Array.isArray(cur.rows[0].changes) ? cur.rows[0].changes : [];
       await client.query(
-        `INSERT INTO configs(game_id, version, config) VALUES($1,$2,$3)
-         ON CONFLICT (game_id) DO UPDATE SET version=EXCLUDED.version, config=EXCLUDED.config`,
-        [gameId, version, JSON.stringify(config)],
+        'INSERT INTO config_history(game_id, version, config, checksum, changes, by_id, at) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING',
+        [gameId, curVersion, JSON.stringify(cur.rowCount ? cur.rows[0].config : {}), cur.rowCount ? cur.rows[0].checksum ?? '' : '', JSON.stringify(curChanges), cur.rowCount ? cur.rows[0].by_id ?? 'system' : 'system', cur.rowCount ? Number(cur.rows[0].at ?? 0) : 0],
       );
-      await client.query('INSERT INTO audit(ts, actor, action, game, detail) VALUES($1,$2,$3,$4,$5)', [ts, by, 'rollback', gameId, JSON.stringify({ version })]);
+      const version = curVersion + 1;
+      await client.query(
+        `INSERT INTO configs(game_id, version, checksum, config, changes, by_id, at) VALUES($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (game_id) DO UPDATE SET version=EXCLUDED.version, checksum=EXCLUDED.checksum, config=EXCLUDED.config, changes=EXCLUDED.changes, by_id=EXCLUDED.by_id, at=EXCLUDED.at`,
+        [gameId, version, p.checksum ?? '', JSON.stringify(p.config), JSON.stringify([`rollback→v${p.version}`]), by, ts],
+      );
+      await client.query('INSERT INTO audit(ts, actor, action, game, detail) VALUES($1,$2,$3,$4,$5)', [ts, by, 'rollback', gameId, JSON.stringify({ version, restored: p.version })]);
       await client.query('COMMIT');
       return version;
     } catch (err) {

@@ -61,7 +61,11 @@ CREATE TABLE IF NOT EXISTS shares (
 CREATE TABLE IF NOT EXISTS configs (
   game_id     text PRIMARY KEY,
   version     int NOT NULL,
-  config      jsonb NOT NULL
+  config      jsonb NOT NULL,
+  checksum    text,
+  changes     jsonb,
+  by_id       text,
+  at          bigint
 );
 
 CREATE TABLE IF NOT EXISTS config_drafts (
@@ -76,6 +80,10 @@ CREATE TABLE IF NOT EXISTS config_history (
   version     int NOT NULL,
   config      jsonb NOT NULL,
   archived_at bigint NOT NULL,
+  checksum    text,
+  changes     jsonb,
+  by_id       text,
+  at          bigint,
   PRIMARY KEY (game_id, version)
 );
 

@@ -69,6 +69,9 @@ export interface PlumberDefSave {
   programmed?: boolean;
   program?: Array<{ type: string; source?: number; count?: number; state?: boolean; index?: number }>;
   inventory?: string[];
+  /** §14: published admin config this level was generated under. */
+  configRevision?: number;
+  configChecksum?: string;
 }
 
 const PLUMBER_KINDS = ['empty', 'blocked', 'straight', 'elbow', 't', 'cross', 'cap', 'valve', 'filter', 'mixer', 'distributor', 'source', 'receiver'];

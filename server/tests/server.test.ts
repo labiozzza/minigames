@@ -209,21 +209,53 @@ describe('config, admin, telemetry', () => {
     const token = await login('user@example.com');
     const forb = await api('/admin/config/draft?game=plumber', { headers: AUTH(token) });
     expect(forb.status).toBe(403);
+    const who = await api('/admin/whoami?x=1', { headers: AUTH(token) });
+    expect(who.body).toEqual({ isAdmin: false, userId: expect.any(String) });
     await store.upsertUser({ id: 'admin-1', email: 'admin@example.com', role: 'admin', createdAt: Date.now() });
     const adminToken = 'admintoken123';
     await store.putSession({ tokenHash: hashSecret(adminToken), userId: 'admin-1', role: 'admin', expiresAt: Date.now() + 3600000 });
     const A = AUTH(adminToken);
     const draft = await api('/admin/config/draft?game=plumber', { headers: A });
     expect(draft.status).toBe(200);
-    await api('/admin/config/draft', { method: 'PUT', headers: A, body: JSON.stringify({ game: 'plumber', draft: { families: ['path'] } }) });
-    const pub = await api('/admin/config/publish', { method: 'POST', headers: A, body: JSON.stringify({ game: 'plumber' }) });
-    expect(pub.body.version).toBe(2);
+    // Strict schema: unknown fields / bad types are refused before anything is stored.
+    const bad = await api('/admin/config/draft', { method: 'PUT', headers: A, body: JSON.stringify({ game: 'plumber', draft: { generator: { familes: ['path'] }, bogus: 1 } }) });
+    expect(bad.status).toBe(422);
+    expect((bad.body.errors as string[]).some((e) => e.includes('bogus'))).toBe(true);
+    const okDraft = await api('/admin/config/draft', { method: 'PUT', headers: A, body: JSON.stringify({ game: 'plumber', draft: { generator: { families: ['path', 'valve'], seedSalt: 7 }, mechanics: { path: true, valve: true } } }) });
+    expect(okDraft.status).toBe(200);
+    expect((okDraft.body.checksum as string).startsWith('fnv1a-')).toBe(true);
+    // Preview really certifies sample levels (no more "client validates seeds").
+    const prev = await api('/admin/config/preview', { method: 'POST', headers: A, body: JSON.stringify({ game: 'plumber', seeds: [11, 22, 33] }) });
+    expect(prev.status).toBe(200);
+    const preview = prev.body.preview as { report: { ok: boolean; total: number; passed: number; results: Array<{ ok: boolean; certLevel: string; puzzleId: string }> } };
+    const report = preview.report;
+    expect(report.total).toBe(3);
+    expect(report.passed).toBe(3);
+    expect(report.ok).toBe(true);
+    expect(report.results.every((r) => r.certLevel === 'certified' && r.puzzleId.includes('plumber-cfg-7'))).toBe(true);
+    // Publishing with too few seeds is refused.
+    const thin = await api('/admin/config/publish', { method: 'POST', headers: A, body: JSON.stringify({ game: 'plumber', seeds: [1], minSeeds: 4 }) });
+    expect(thin.status).toBe(422);
+    expect(thin.body.error).toBe('too-few-seeds');
+    const pub = await api('/admin/config/publish', { method: 'POST', headers: A, body: JSON.stringify({ game: 'plumber', minSeeds: 4 }) });
+    expect(pub.status).toBe(200);
+    const pubVer = pub.body.version as { version: number; checksum: string; changes: string[] };
+    expect(pubVer.version).toBe(2);
+    expect(pubVer.checksum.startsWith('fnv1a-')).toBe(true);
+    expect(pubVer.changes.length).toBeGreaterThan(0);
     const cfg = await api('/games/plumber/config', { headers: AUTH(token) });
-    expect((cfg.body.config as { version: number }).version).toBe(2);
+    const pubCfg = cfg.body.config as { version: number; revision: number; checksum: string };
+    expect(pubCfg.version).toBe(2);
+    expect(pubCfg.revision).toBe(2);
+    expect(pubCfg.checksum).toBe(pubVer.checksum);
+    // History is immutable and rollback re-publishes the previous snapshot.
+    const hist = await api('/admin/config/history', { headers: A });
+    expect((hist.body.history as unknown[]).length).toBe(1);
     const rb = await api('/admin/config/rollback', { method: 'POST', headers: A, body: JSON.stringify({ game: 'plumber' }) });
-    expect(rb.body.version).toBe(1);
+    expect((rb.body.version as { version: number }).version).toBe(3);
     const audit = await api('/admin/audit', { headers: A });
-    expect((audit.body.audit as unknown[]).length).toBeGreaterThanOrEqual(3);
+    expect((audit.body.audit as Array<Record<string, unknown>>).length).toBeGreaterThanOrEqual(3);
+    expect((audit.body.audit as Array<Record<string, unknown>>).some((a) => a.action === 'publish' && typeof a.checksum === 'string')).toBe(true);
   });
   it('telemetry requires versioned consent and an allowlist', async () => {
     const token = await login('tele@example.com');

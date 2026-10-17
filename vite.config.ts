@@ -58,6 +58,14 @@ export default defineConfig(({ command }) => ({
   build: {
     target: 'es2022',
     chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      input: {
+        main: './index.html',
+        // §14: the admin panel is a separate entry; it ships with the app but
+        // is useless without an admin session (every /admin route returns 403).
+        admin: './admin.html',
+      },
+    },
   },
   worker: { format: 'es' },
 }));

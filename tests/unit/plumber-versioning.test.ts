@@ -94,4 +94,63 @@ describe('§13 save versioning v2 -> v3 (additive, lossless)', () => {
   it('empty save is already current schema', () => {
     expect(emptySave().schemaVersion).toBe(SAVE_SCHEMA);
   });
+
+  it('§14 pins configRevision on an active level and keeps it through reloads', async () => {
+    const snap = v2Snapshot() as { games: Record<string, { modes?: Record<string, { active: unknown }> }> };
+    snap.games.plumber.modes!.normal.active = {
+      levelNumber: 2,
+      puzzleId: 'plumber-normal-lvl-2',
+      seed: 7,
+      mode: 'normal',
+      gridW: 1,
+      gridH: 1,
+      rots: [0],
+      kinds: ['straight'],
+      liveConfig: [null],
+      water: [0],
+      waterColor: [''],
+      valves: [],
+      mixerStock: [],
+      distCount: [],
+      sourceLeft: [],
+      sourceEnabled: [],
+      receiverGot: [],
+      receivedTotal: [],
+      fedTotal: 0,
+      carried: null,
+      cameFrom: [],
+      inventoryLeft: [],
+      program: [],
+      programCounter: 0,
+      lost: 0,
+      tick: 0,
+      idleTicks: 0,
+      phase: 'PREPARING',
+      playerRotations: 0,
+      hintsUsed: 0,
+      configRevision: 3,
+      configChecksum: 'fnv1a-deadbeef',
+      def: {
+        cells: [{ kind: 'straight', rot: 0 }],
+        sources: [],
+        receivers: [],
+        solutionWitness: [],
+        puzzleId: 'plumber-normal-lvl-2',
+        seed: 7,
+        mode: 'normal',
+        family: 'path',
+        gridW: 1,
+        gridH: 1,
+      },
+    };
+    mem.set(SAVE_KEY, JSON.stringify(snap));
+    const s1 = await loadSave();
+    const active1 = (s1.games.plumber as { modes: Record<string, { active: { configRevision?: number; configChecksum?: string } | null }> }).modes.normal.active;
+    expect(active1?.configRevision).toBe(3);
+    expect(active1?.configChecksum).toBe('fnv1a-deadbeef');
+    // Re-loading (migration is idempotent) must not drop the pin.
+    const s2 = await loadSave();
+    const active2 = (s2.games.plumber as { modes: Record<string, { active: { configRevision?: number } | null }> }).modes.normal.active;
+    expect(active2?.configRevision).toBe(3);
+  });
 });

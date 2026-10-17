@@ -26,6 +26,10 @@ export interface AuthOptions {
   /** When true, issued codes are readable via lastCodeFor (test builds only). */
   exposeCodes?: boolean;
   now?: () => number;
+  /** Emails that receive the admin role on login (never hard-coded). */
+  adminEmails?: string[];
+  /** Test/E2E only: skip the per-email request window (never in production). */
+  noRateLimit?: boolean;
 }
 
 export class AuthService {
@@ -33,10 +37,14 @@ export class AuthService {
   private ipLog = new Map<string, number[]>();
   private now: () => number;
   private exposeCodes: boolean;
+  private adminEmails: Set<string>;
+  private noRateLimit: boolean;
 
   constructor(private store: Store, opts: AuthOptions = {}) {
     this.now = opts.now ?? Date.now;
     this.exposeCodes = opts.exposeCodes ?? false;
+    this.adminEmails = new Set((opts.adminEmails ?? []).map((e) => e.trim().toLowerCase()).filter(Boolean));
+    this.noRateLimit = opts.noRateLimit ?? false;
   }
 
   /** Dev/test hook. Returns undefined in production configuration. */
@@ -54,11 +62,16 @@ export class AuthService {
 
   async requestOtp(email: string, ip = 'unknown'): Promise<{ ok: true; retryAfter?: number; code?: string }> {
     const ts = this.now();
-    if (this.ipLimited(ip, ts)) return { ok: true, retryAfter: 3600 };
-    const log = (await this.store.otpRequests(email)).filter((t) => ts - t < REQ_WINDOW_MS);
-    if (log.length >= MAX_REQ_PER_WINDOW) {
-      const retryAfter = Math.ceil((log[0] + REQ_WINDOW_MS - ts) / 1000);
-      return { ok: true, retryAfter }; // same shape: no enumeration
+    // Only an explicit test flag skips the window limit (so repeated E2E runs
+    // against a persistent store can obtain a fresh code). Production and the
+    // rate-limit unit tests keep the guard.
+    if (!this.noRateLimit) {
+      if (this.ipLimited(ip, ts)) return { ok: true, retryAfter: 3600 };
+      const log = (await this.store.otpRequests(email)).filter((t) => ts - t < REQ_WINDOW_MS);
+      if (log.length >= MAX_REQ_PER_WINDOW) {
+        const retryAfter = Math.ceil((log[0] + REQ_WINDOW_MS - ts) / 1000);
+        return { ok: true, retryAfter }; // same shape: no enumeration
+      }
     }
     await this.store.pushOtpRequest(email, ts);
     const code = String(randomInt(0, 1000000)).padStart(6, '0');
@@ -86,8 +99,12 @@ export class AuthService {
     }
     await this.store.delOtp(email); // single-use
     let user = await this.store.findUserByEmail(email);
+    const role = this.adminEmails.has(email.trim().toLowerCase()) ? 'admin' : 'player';
     if (!user) {
-      user = { id: `u_${randomBytes(8).toString('hex')}`, email, role: 'player', createdAt: ts };
+      user = { id: `u_${randomBytes(8).toString('hex')}`, email, role, createdAt: ts };
+      await this.store.upsertUser(user);
+    } else if (user.role !== role) {
+      user = { ...user, role };
       await this.store.upsertUser(user);
     }
     const token = randomBytes(32).toString('base64url');

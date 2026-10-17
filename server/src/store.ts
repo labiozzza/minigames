@@ -41,6 +41,15 @@ export interface ShareRec {
   hits: number;
 }
 
+export interface ConfigRec {
+  version: number;
+  checksum: string;
+  config: unknown;
+  changes: string[];
+  by: string;
+  at: number;
+}
+
 export interface Store {
   // users & sessions
   getUser(id: string): Promise<UserRec | null>;
@@ -75,11 +84,12 @@ export interface Store {
   putShare(code: string, rec: ShareRec): Promise<void>;
   getShare(code: string): Promise<ShareRec | null>;
   // config & audit
-  getConfig(gameId: string): Promise<{ version: number; config: unknown }>;
+  getConfig(gameId: string): Promise<ConfigRec>;
   getDraft(gameId: string): Promise<{ draft: unknown; updatedBy: string; updatedAt: number } | null>;
   putDraft(gameId: string, draft: unknown, by: string, ts: number): Promise<void>;
-  publishConfig(gameId: string, by: string, ts: number): Promise<number | null>;
+  publishConfig(gameId: string, by: string, ts: number, meta?: { checksum: string; changes: string[] }): Promise<number | null>;
   rollbackConfig(gameId: string, by: string, ts: number): Promise<number | null>;
+  getHistory(gameId: string): Promise<ConfigRec[]>;
   getAudit(limit: number): Promise<Array<Record<string, unknown>>>;
   // telemetry
   putTelemetry(userId: string, events: Array<Record<string, unknown>>, ts: number): Promise<void>;
@@ -155,9 +165,9 @@ export class MemoryStore implements Store {
   private otpLog = new Map<string, number[]>();
   private saves = new Map<string, SaveRec>();
   private shares = new Map<string, ShareRec>();
-  private configs = new Map<string, { version: number; config: unknown }>();
+  private configs = new Map<string, ConfigRec>();
   private drafts = new Map<string, { draft: unknown; updatedBy: string; updatedAt: number }>();
-  private history = new Map<string, Array<{ version: number; config: unknown }>>();
+  private history = new Map<string, ConfigRec[]>();
   private audit: Array<Record<string, unknown>> = [];
   private telemetry: Array<Record<string, unknown>> = [];
 
@@ -223,36 +233,42 @@ export class MemoryStore implements Store {
   }
   async putShare(code: string, rec: ShareRec): Promise<void> { this.shares.set(code, rec); }
   async getShare(code: string): Promise<ShareRec | null> { return this.shares.get(code) ?? null; }
-  async getConfig(gameId: string): Promise<{ version: number; config: unknown }> {
-    return this.configs.get(gameId) ?? { version: 1, config: { game: gameId, families: 'default' } };
+  async getConfig(gameId: string): Promise<ConfigRec> {
+    return this.configs.get(gameId) ?? { version: 1, checksum: '', config: { game: gameId, families: 'default' }, changes: [], by: 'system', at: 0 };
   }
   async getDraft(gameId: string) { return this.drafts.get(gameId) ?? null; }
   async putDraft(gameId: string, draft: unknown, by: string, ts: number): Promise<void> {
     this.drafts.set(gameId, { draft: JSON.parse(JSON.stringify(draft)), updatedBy: by, updatedAt: ts });
     this.audit.push({ ts, by, action: 'draft', game: gameId });
   }
-  async publishConfig(gameId: string, by: string, ts: number): Promise<number | null> {
+  async publishConfig(gameId: string, by: string, ts: number, meta: { checksum: string; changes: string[] } = { checksum: '', changes: [] }): Promise<number | null> {
     const d = this.drafts.get(gameId);
     if (!d) return null;
-    const cur = this.configs.get(gameId) ?? { version: 1, config: {} };
+    const cur = this.configs.get(gameId) ?? { version: 1, checksum: '', config: {}, changes: [], by: 'system', at: 0 };
     const hist = this.history.get(gameId) ?? [];
-    hist.push(cur);
+    hist.push({ ...cur });
     this.history.set(gameId, hist);
     const version = cur.version + 1;
-    this.configs.set(gameId, { version, config: d.draft });
+    this.configs.set(gameId, { version, checksum: meta.checksum, config: d.draft, changes: meta.changes, by, at: ts });
     this.drafts.delete(gameId);
-    this.audit.push({ ts, by, action: 'publish', game: gameId, version });
+    this.audit.push({ ts, by, action: 'publish', game: gameId, version, checksum: meta.checksum, changes: meta.changes });
     return version;
   }
+  /** Roll back by publishing the previous snapshot as a new version (history stays immutable). */
   async rollbackConfig(gameId: string, by: string, ts: number): Promise<number | null> {
     const hist = this.history.get(gameId) ?? [];
-    const prev = hist.pop();
+    const prev = hist[hist.length - 1];
     if (!prev) return null;
+    hist.pop();
+    const cur = this.configs.get(gameId) ?? { version: 1, checksum: '', config: {}, changes: [], by: 'system', at: 0 };
+    hist.push({ ...cur });
     this.history.set(gameId, hist);
-    this.configs.set(gameId, prev);
-    this.audit.push({ ts, by, action: 'rollback', game: gameId, version: prev.version });
-    return prev.version;
+    const version = cur.version + 1;
+    this.configs.set(gameId, { ...prev, version, by, at: ts, changes: [`rollback→v${prev.version}`] });
+    this.audit.push({ ts, by, action: 'rollback', game: gameId, version, restored: prev.version });
+    return version;
   }
+  async getHistory(gameId: string): Promise<ConfigRec[]> { return [...(this.history.get(gameId) ?? [])]; }
   async getAudit(limit: number) { return this.audit.slice(-limit); }
   async putTelemetry(userId: string, events: Array<Record<string, unknown>>, ts: number): Promise<void> {
     this.telemetry.push({ userId, ts, events });
