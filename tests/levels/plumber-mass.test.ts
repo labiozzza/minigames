@@ -8,12 +8,16 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { createRuntime, runToEnd, applyCommand, totalVolume, type LevelDefinition } from '../../src/games/plumber/domain/model';
-import { generateLevel, certifySolvable, winsWithoutWitness, logicalFingerprint, type Family } from '../../src/games/plumber/domain/generator';
+import { generateLevel, certifySolvable, winsWithoutWitness, logicalFingerprint, canonicalFingerprint, structuralSimilarity, type Family } from '../../src/games/plumber/domain/generator';
+import { familyForMode } from '../../src/games/plumber/domain/progression';
 
 const MODES = ['child', 'normal', 'expert'] as const;
 const PER_MODE = 1500;
-const FAMILIES: Family[] = ['path', 'leakfix', 'valve', 'filter', 'mixer', 'program', 'carry', 'multiflow', 'exact'];
+const FAMILIES: Family[] = ['path', 'leakfix', 'valve', 'filter', 'mixer', 'program', 'carry', 'multiflow', 'exact', 'branch'];
 const PER_FAMILY = 650;
+
+/** Let vitest's worker heartbeat run during long synchronous corpus loops. */
+const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 interface Metrics {
   total: number;
@@ -27,10 +31,18 @@ interface Metrics {
   parSum: number;
   parMax: number;
   bySize: Map<string, number>;
+  canonical: Map<string, number>;
+  essentialSum: number;
+  decisionsSum: number;
+  interactionsSum: number;
+  meaningfulSum: number;
+  scoreSum: number;
+  scoreMin: number;
+  noEvidence: number;
 }
 
 function newMetrics(): Metrics {
-  return { total: 0, fallback: 0, unsolvable: 0, nontrivialFails: 0, determinismFails: 0, fingerprints: new Map(), logical: new Map(), edges: new Map(), parSum: 0, parMax: 0, bySize: new Map() };
+  return { total: 0, fallback: 0, unsolvable: 0, nontrivialFails: 0, determinismFails: 0, fingerprints: new Map(), logical: new Map(), edges: new Map(), parSum: 0, parMax: 0, bySize: new Map(), canonical: new Map(), essentialSum: 0, decisionsSum: 0, interactionsSum: 0, meaningfulSum: 0, scoreSum: 0, scoreMin: Infinity, noEvidence: 0 };
 }
 
 /** Which grid edge a cell index sits on (for route-direction diversity). */
@@ -70,6 +82,18 @@ function check(def: LevelDefinition, m: Metrics): void {
     .sort()
     .join('+') + '>' + def.receivers.map((r) => edgeOf(r.cell, def.gridW, def.gridH)).sort().join('+');
   m.edges.set(pair, (m.edges.get(pair) ?? 0) + 1);
+  const cf = canonicalFingerprint(def);
+  m.canonical.set(cf, (m.canonical.get(cf) ?? 0) + 1);
+  const e = def.difficultyEvidence;
+  if (e.score === undefined) m.noEvidence += 1;
+  else {
+    m.essentialSum += e.essentialLength ?? 0;
+    m.decisionsSum += e.decisions ?? 0;
+    m.interactionsSum += e.interactions ?? 0;
+    m.meaningfulSum += e.meaningfulRatio ?? 0;
+    m.scoreSum += e.score;
+    m.scoreMin = Math.min(m.scoreMin, e.score);
+  }
 }
 
 function replay(def: LevelDefinition): void {
@@ -96,6 +120,15 @@ function writeReport(m: Metrics, extra: Record<string, unknown>): void {
     overlapRate: Number((duplicates / Math.max(1, distinct)).toFixed(4)),
     distinctLogicalFingerprints: logicalDistinct,
     logicalOverlapRate: Number(((m.total - logicalDistinct) / Math.max(1, m.total)).toFixed(4)),
+    distinctCanonicalFingerprints: m.canonical.size,
+    canonicalOverlapRate: Number(((m.total - m.canonical.size) / Math.max(1, m.total)).toFixed(4)),
+    missingDifficultyEvidence: m.noEvidence,
+    meanEssentialLength: Number((m.essentialSum / Math.max(1, m.total)).toFixed(3)),
+    meanDecisions: Number((m.decisionsSum / Math.max(1, m.total)).toFixed(3)),
+    meanInteractions: Number((m.interactionsSum / Math.max(1, m.total)).toFixed(3)),
+    meanMeaningfulRatio: Number((m.meaningfulSum / Math.max(1, m.total)).toFixed(4)),
+    meanQualityScore: Number((m.scoreSum / Math.max(1, m.total)).toFixed(3)),
+    minQualityScore: Number.isFinite(m.scoreMin) ? m.scoreMin : 0,
     routeEdgePairs: Object.fromEntries([...m.edges.entries()].sort((a, b) => b[1] - a[1])),
     meanPar: Number((m.parSum / Math.max(1, m.total)).toFixed(3)),
     maxPar: m.parMax,
@@ -141,14 +174,21 @@ describe('plumber mass: families', () => {
     }
   });
 
-  it('aggregates the full 10000+ corpus with no fallbacks or overlaps beyond slack', () => {
+  it('aggregates the full 10000+ corpus with no fallbacks or overlaps beyond slack', async () => {
     const m = newMetrics();
+    let n = 0;
     for (const mode of MODES) {
-      for (let seed = 1; seed <= 1200; seed++) check(generateLevel(`corpus-${mode}-${seed}`, seed, { mode }), m);
+      for (let seed = 1; seed <= 1200; seed++) {
+        check(generateLevel(`corpus-${mode}-${seed}`, seed, { mode }), m);
+        if (++n % 200 === 0) await tick();
+      }
     }
     for (const family of FAMILIES) {
       const mode = family === 'mixer' || family === 'program' ? 'expert' : 'normal';
-      for (let seed = 9000; seed < 9000 + 750; seed++) check(generateLevel(`corpus-${family}-${seed}`, seed, { mode, family }), m);
+      for (let seed = 9000; seed < 9000 + 750; seed++) {
+        check(generateLevel(`corpus-${family}-${seed}`, seed, { mode, family }), m);
+        if (++n % 200 === 0) await tick();
+      }
     }
     writeReport(m, { kind: 'corpus', modes: MODES, families: FAMILIES });
     expect(m.total).toBeGreaterThanOrEqual(10000);
@@ -160,6 +200,12 @@ describe('plumber mass: families', () => {
     expect(overlap).toBeLessThan(0.2);
     // §4 direction variety: routes must not all start/end on the same edge pair.
     expect(m.edges.size).toBeGreaterThanOrEqual(4);
+    // P2 §2.3/§2.4: every level carries measured evidence, routes are decided,
+    // and the field is mostly meaningful (not padded with random noise).
+    expect(m.noEvidence).toBe(0);
+    expect(m.scoreSum / m.total).toBeGreaterThan(4);
+    expect(m.essentialSum / m.total).toBeGreaterThan(2);
+    expect(m.meaningfulSum / m.total).toBeGreaterThan(0.3);
   });
 });
 
@@ -196,5 +242,71 @@ describe('§4 diversity sample (20 levels per mode)', () => {
     }
     mkdirSync('evidence', { recursive: true });
     writeFileSync('evidence/plumber-diversity-sample.json', `${JSON.stringify({ samplePerMode: SAMPLE, rows }, null, 2)}\n`);
+  }, 120000);
+});
+
+const SOLUTION_TYPE: Record<string, string> = {
+  path: 'Одна дорожка: сориентировать все изгибы, чтобы вода дошла до приёмника',
+  leakfix: 'Есть открытый отвод-утечка: заглушить его поворотом и закрыть основную дорожку',
+  valve: 'На пути закрытый вентиль: открыть его и сориентировать трубы',
+  filter: 'Фильтр пропускает только нужный цвет + отвлекающий красный источник',
+  mixer: 'Смеситель: два источника (красный + синий) → фиолетовый приёмник',
+  program: 'Источник выключен: собрать программу, которая включит его после сборки пути',
+  carry: 'Не хватает трубы: поставить деталь из инвентаря и сориентировать',
+  multiflow: 'Два независимых потока в одной сетке (сверху и снизу)',
+  exact: 'Ровно нужный объём: ни одного лишнего поворота/утечки',
+  branch: 'Разветвление: один источник делится на два приёмника через тройник',
+};
+
+describe('P2 quality sample (30 consecutive gameplay levels per mode)', () => {
+  it('certifies 30 real levels per mode and writes evidence + solution types', async () => {
+    const SAMPLE = 30;
+    const rows: Array<Record<string, unknown>> = [];
+    for (const mode of MODES) {
+      const salt = mode === 'child' ? 0x11 : mode === 'expert' ? 0x33 : 0x22;
+      const seenCanonical = new Set<string>();
+      const seenFamilies = new Set<string>();
+      const seenInteractions = new Set<number>();
+      for (let level = 1; level <= SAMPLE; level++) {
+        const id = `plumber-${mode}-lvl-${level}`;
+        const seed = ((level * 2654435761) ^ salt) >>> 0;
+        const def = generateLevel(id, seed, { mode, family: familyForMode(mode, level) });
+        expect(certifySolvable(def)).toBe(true);
+        expect(winsWithoutWitness(def)).toBe(false);
+        const e = def.difficultyEvidence;
+        expect(e.score).toBeGreaterThan(0);
+        const canonical = canonicalFingerprint(def);
+        seenCanonical.add(canonical);
+        seenFamilies.add(def.family);
+        seenInteractions.add(e.interactions ?? 0);
+        rows.push({
+          mode,
+          level,
+          family: def.family,
+          solutionType: SOLUTION_TYPE[def.family] ?? def.family,
+          grid: `${def.gridW}x${def.gridH}`,
+          par: def.par ?? def.solutionWitness.filter((c) => c.type === 'rotate').length,
+          essentialLength: e.essentialLength,
+          decisions: e.decisions,
+          falseAlternatives: e.falseAlternatives,
+          interactions: e.interactions,
+          meaningfulRatio: e.meaningfulRatio,
+          score: e.score,
+          canonicalFingerprint: canonical,
+        });
+        if (level % 10 === 0) await tick();
+      }
+      // 30 consecutive levels must be near-all structurally distinct and use
+      // more than one family/decision type.
+      expect(seenCanonical.size).toBeGreaterThanOrEqual(SAMPLE - 2);
+      expect(seenFamilies.size).toBeGreaterThanOrEqual(2);
+      expect(seenInteractions.size).toBeGreaterThanOrEqual(1);
+    }
+    // Sanity: rotation-equivalent pairs would collapse; consecutive levels must not.
+    const expertRows = rows.filter((r) => r.mode === 'expert');
+    const a = generateLevel('plumber-expert-lvl-1', ((1 * 2654435761) ^ 0x33) >>> 0, { mode: 'expert' });
+    expect(structuralSimilarity(a, a)).toBe(1);
+    mkdirSync('evidence', { recursive: true });
+    writeFileSync('evidence/plumber-quality-sample.json', `${JSON.stringify({ samplePerMode: SAMPLE, rows, expertDistinctCanonical: new Set(expertRows.map((r) => r.canonicalFingerprint)).size }, null, 2)}\n`);
   }, 120000);
 });

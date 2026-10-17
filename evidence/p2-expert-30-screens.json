@@ -1,0 +1,433 @@
+{
+  "count": 30,
+  "summary": [
+    {
+      "level": 1,
+      "pid": "plumber-expert-lvl-1#0",
+      "grid": "6x6",
+      "kinds": {
+        "empty": 16,
+        "blocked": 3,
+        "source": 1,
+        "elbow": 8,
+        "straight": 7,
+        "receiver": 1
+      },
+      "rotatable": 14
+    },
+    {
+      "level": 2,
+      "pid": "plumber-expert-lvl-2#0",
+      "grid": "6x6",
+      "kinds": {
+        "blocked": 7,
+        "empty": 21,
+        "straight": 5,
+        "receiver": 1,
+        "elbow": 1,
+        "source": 1
+      },
+      "rotatable": 6
+    },
+    {
+      "level": 3,
+      "pid": "plumber-expert-lvl-3#2",
+      "grid": "6x6",
+      "kinds": {
+        "empty": 12,
+        "elbow": 6,
+        "straight": 9,
+        "receiver": 1,
+        "source": 1,
+        "blocked": 6,
+        "valve": 1
+      },
+      "rotatable": 16
+    },
+    {
+      "level": 4,
+      "pid": "plumber-expert-lvl-4#0",
+      "grid": "6x6",
+      "kinds": {
+        "elbow": 11,
+        "straight": 5,
+        "receiver": 1,
+        "blocked": 5,
+        "source": 2,
+        "empty": 11,
+        "filter": 1
+      },
+      "rotatable": 17
+    },
+    {
+      "level": 5,
+      "pid": "plumber-expert-lvl-5#1",
+      "grid": "5x3",
+      "kinds": {
+        "empty": 4,
+        "source": 2,
+        "elbow": 1,
+        "straight": 5,
+        "mixer": 1,
+        "receiver": 1,
+        "blocked": 1
+      },
+      "rotatable": 7
+    },
+    {
+      "level": 6,
+      "pid": "plumber-expert-lvl-6#0",
+      "grid": "6x6",
+      "kinds": {
+        "empty": 26,
+        "blocked": 1,
+        "elbow": 2,
+        "straight": 5,
+        "source": 1,
+        "receiver": 1
+      },
+      "rotatable": 7
+    },
+    {
+      "level": 7,
+      "pid": "plumber-expert-lvl-7#1",
+      "grid": "6x6",
+      "kinds": {
+        "elbow": 9,
+        "empty": 14,
+        "receiver": 1,
+        "straight": 8,
+        "blocked": 3,
+        "source": 1
+      },
+      "rotatable": 17
+    },
+    {
+      "level": 8,
+      "pid": "plumber-expert-lvl-8#0",
+      "grid": "6x6",
+      "kinds": {
+        "empty": 15,
+        "elbow": 4,
+        "straight": 9,
+        "source": 2,
+        "receiver": 2,
+        "blocked": 4
+      },
+      "rotatable": 13
+    },
+    {
+      "level": 9,
+      "pid": "plumber-expert-lvl-9#0",
+      "grid": "6x6",
+      "kinds": {
+        "receiver": 1,
+        "straight": 4,
+        "source": 1,
+        "blocked": 4,
+        "empty": 26
+      },
+      "rotatable": 3
+    },
+    {
+      "level": 10,
+      "pid": "plumber-expert-lvl-10#0",
+      "grid": "6x6",
+      "kinds": {
+        "receiver": 1,
+        "empty": 23,
+        "straight": 7,
+        "elbow": 2,
+        "blocked": 2,
+        "source": 1
+      },
+      "rotatable": 9
+    },
+    {
+      "level": 11,
+      "pid": "plumber-expert-lvl-11#1",
+      "grid": "5x4",
+      "kinds": {
+        "empty": 8,
+        "elbow": 5,
+        "source": 2,
+        "straight": 3,
+        "mixer": 1,
+        "receiver": 1
+      },
+      "rotatable": 9
+    },
+    {
+      "level": 12,
+      "pid": "plumber-expert-lvl-12#0",
+      "grid": "6x6",
+      "kinds": {
+        "empty": 22,
+        "blocked": 7,
+        "source": 1,
+        "straight": 4,
+        "receiver": 1,
+        "elbow": 1
+      },
+      "rotatable": 4
+    },
+    {
+      "level": 13,
+      "pid": "plumber-expert-lvl-13#2",
+      "grid": "6x6",
+      "kinds": {
+        "blocked": 7,
+        "empty": 11,
+        "elbow": 5,
+        "receiver": 2,
+        "straight": 9,
+        "t": 1,
+        "source": 1
+      },
+      "rotatable": 15
+    },
+    {
+      "level": 14,
+      "pid": "plumber-expert-lvl-14#2",
+      "grid": "6x6",
+      "kinds": {
+        "source": 1,
+        "straight": 3,
+        "elbow": 4,
+        "empty": 23,
+        "blocked": 4,
+        "receiver": 1
+      },
+      "rotatable": 7
+    },
+    {
+      "level": 15,
+      "pid": "plumber-expert-lvl-15#6",
+      "grid": "6x6",
+      "kinds": {
+        "blocked": 4,
+        "empty": 10,
+        "elbow": 7,
+        "straight": 11,
+        "receiver": 2,
+        "source": 2
+      },
+      "rotatable": 18
+    },
+    {
+      "level": 16,
+      "pid": "plumber-expert-lvl-16#3",
+      "grid": "6x6",
+      "kinds": {
+        "receiver": 2,
+        "elbow": 7,
+        "blocked": 8,
+        "empty": 9,
+        "straight": 8,
+        "source": 2
+      },
+      "rotatable": 15
+    },
+    {
+      "level": 17,
+      "pid": "plumber-expert-lvl-17#1",
+      "grid": "6x6",
+      "kinds": {
+        "source": 1,
+        "empty": 21,
+        "blocked": 4,
+        "straight": 6,
+        "elbow": 3,
+        "receiver": 1
+      },
+      "rotatable": 9
+    },
+    {
+      "level": 18,
+      "pid": "plumber-expert-lvl-18#3",
+      "grid": "6x6",
+      "kinds": {
+        "receiver": 2,
+        "straight": 11,
+        "empty": 14,
+        "elbow": 4,
+        "source": 2,
+        "blocked": 3
+      },
+      "rotatable": 15
+    },
+    {
+      "level": 19,
+      "pid": "plumber-expert-lvl-19#1",
+      "grid": "6x6",
+      "kinds": {
+        "empty": 14,
+        "elbow": 8,
+        "blocked": 3,
+        "straight": 7,
+        "receiver": 1,
+        "source": 2,
+        "filter": 1
+      },
+      "rotatable": 16
+    },
+    {
+      "level": 20,
+      "pid": "plumber-expert-lvl-20#1",
+      "grid": "6x6",
+      "kinds": {
+        "empty": 21,
+        "blocked": 2,
+        "source": 2,
+        "straight": 4,
+        "elbow": 5,
+        "filter": 1,
+        "receiver": 1
+      },
+      "rotatable": 10
+    },
+    {
+      "level": 21,
+      "pid": "plumber-expert-lvl-21#0",
+      "grid": "6x6",
+      "kinds": {
+        "empty": 19,
+        "blocked": 5,
+        "elbow": 4,
+        "straight": 5,
+        "source": 1,
+        "valve": 1,
+        "receiver": 1
+      },
+      "rotatable": 10
+    },
+    {
+      "level": 22,
+      "pid": "plumber-expert-lvl-22#3",
+      "grid": "5x3",
+      "kinds": {
+        "empty": 5,
+        "source": 2,
+        "elbow": 2,
+        "straight": 3,
+        "mixer": 1,
+        "receiver": 1,
+        "blocked": 1
+      },
+      "rotatable": 6
+    },
+    {
+      "level": 23,
+      "pid": "plumber-expert-lvl-23#2",
+      "grid": "6x6",
+      "kinds": {
+        "source": 1,
+        "straight": 4,
+        "elbow": 3,
+        "empty": 23,
+        "blocked": 4,
+        "receiver": 1
+      },
+      "rotatable": 6
+    },
+    {
+      "level": 24,
+      "pid": "plumber-expert-lvl-24#0",
+      "grid": "6x6",
+      "kinds": {
+        "empty": 25,
+        "blocked": 5,
+        "receiver": 1,
+        "elbow": 1,
+        "straight": 3,
+        "source": 1
+      },
+      "rotatable": 3
+    },
+    {
+      "level": 25,
+      "pid": "plumber-expert-lvl-25#1",
+      "grid": "6x6",
+      "kinds": {
+        "empty": 17,
+        "elbow": 8,
+        "straight": 6,
+        "source": 1,
+        "blocked": 2,
+        "valve": 1,
+        "receiver": 1
+      },
+      "rotatable": 15
+    },
+    {
+      "level": 26,
+      "pid": "plumber-expert-lvl-26#0",
+      "grid": "6x6",
+      "kinds": {
+        "elbow": 10,
+        "empty": 12,
+        "straight": 10,
+        "source": 1,
+        "blocked": 2,
+        "receiver": 1
+      },
+      "rotatable": 20
+    },
+    {
+      "level": 27,
+      "pid": "plumber-expert-lvl-27#3",
+      "grid": "5x4",
+      "kinds": {
+        "empty": 11,
+        "source": 2,
+        "elbow": 2,
+        "mixer": 1,
+        "straight": 3,
+        "receiver": 1
+      },
+      "rotatable": 6
+    },
+    {
+      "level": 28,
+      "pid": "plumber-expert-lvl-28#0",
+      "grid": "6x6",
+      "kinds": {
+        "empty": 19,
+        "source": 1,
+        "elbow": 6,
+        "straight": 9,
+        "receiver": 1
+      },
+      "rotatable": 14
+    },
+    {
+      "level": 29,
+      "pid": "plumber-expert-lvl-29#2",
+      "grid": "6x6",
+      "kinds": {
+        "blocked": 8,
+        "empty": 12,
+        "straight": 7,
+        "source": 1,
+        "elbow": 7,
+        "receiver": 1
+      },
+      "rotatable": 14
+    },
+    {
+      "level": 30,
+      "pid": "plumber-expert-lvl-30#0",
+      "grid": "6x6",
+      "kinds": {
+        "empty": 16,
+        "elbow": 5,
+        "straight": 10,
+        "valve": 1,
+        "receiver": 1,
+        "blocked": 2,
+        "source": 1
+      },
+      "rotatable": 16
+    }
+  ]
+}

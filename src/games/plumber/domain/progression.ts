@@ -16,7 +16,7 @@ const CURRICULUM: Family[] = [
 /** Deterministic family for a level number (curriculum then stable cycle). */
 export function familyForLevel(level: number): Family {
   if (level <= CURRICULUM.length) return CURRICULUM[level - 1];
-  const rest: Family[] = ['path', 'leakfix', 'valve', 'filter', 'mixer', 'program', 'carry', 'multiflow', 'exact'];
+  const rest: Family[] = ['path', 'leakfix', 'valve', 'filter', 'mixer', 'program', 'carry', 'multiflow', 'exact', 'branch'];
   // Stable pseudo-random pick by level (no Math.random).
   let x = (level * 2654435761) >>> 0;
   x ^= x >> 15;
@@ -29,15 +29,15 @@ export function familyForLevel(level: number): Family {
 // mirror the generator's per-mode family table so we never force a family the
 // mode cannot build.
 const MODE_POOL: Record<Mode, Family[]> = {
-  child: ['path', 'leakfix'],
-  normal: ['path', 'leakfix', 'valve', 'filter', 'carry', 'multiflow', 'exact'],
-  expert: ['path', 'leakfix', 'valve', 'filter', 'mixer', 'program', 'carry', 'multiflow', 'exact'],
+  child: ['path', 'leakfix', 'branch'],
+  normal: ['path', 'leakfix', 'valve', 'filter', 'carry', 'multiflow', 'exact', 'branch'],
+  expert: ['path', 'leakfix', 'valve', 'filter', 'mixer', 'program', 'carry', 'multiflow', 'exact', 'branch'],
 };
 
 const MODE_CURRICULUM: Record<Mode, Family[]> = {
-  child: ['path', 'path', 'path', 'leakfix'],
-  normal: ['path', 'path', 'path', 'leakfix', 'valve', 'filter', 'carry', 'path', 'multiflow', 'exact', 'valve', 'filter'],
-  expert: ['path', 'leakfix', 'valve', 'filter', 'mixer', 'program', 'carry', 'multiflow', 'exact', 'program', 'mixer', 'exact'],
+  child: ['path', 'path', 'path', 'leakfix', 'branch'],
+  normal: ['path', 'path', 'path', 'leakfix', 'valve', 'filter', 'carry', 'path', 'multiflow', 'exact', 'valve', 'filter', 'branch'],
+  expert: ['path', 'leakfix', 'valve', 'filter', 'mixer', 'program', 'carry', 'multiflow', 'exact', 'program', 'mixer', 'exact', 'branch'],
 };
 
 /** Deterministic per-mode family: curriculum first, then a stable cycle. */

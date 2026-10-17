@@ -132,7 +132,30 @@ export interface LevelDefinition {
   inventory?: PipeKind[];
   /** Verified action sequence that wins (rotations + valve/program ops). */
   solutionWitness: PlumberCommand[];
-  difficultyEvidence: { pathLength: number; rotatable: number; branches: number };
+  /**
+   * §4/§6 difficulty + structure metrics. The first three are always present
+   * (back-compat); the P2 fields are additive and populated by the generator's
+   * candidate-and-select layer so quality is measured, not assumed.
+   */
+  difficultyEvidence: {
+    pathLength: number;
+    rotatable: number;
+    branches: number;
+    /** Pipe cells on a source→receiver flow path (the "essential" route). */
+    essentialLength?: number;
+    /** Essential cells the player must decide (rotatable, unlocked). */
+    decisions?: number;
+    /** Flow-reachable dead-ends: real false directions the player must ignore. */
+    falseAlternatives?: number;
+    /** Distinct interaction types in the witness (rotate/valve/place/source). */
+    interactions?: number;
+    /** Playable (non-empty, non-blocked) cells / total. */
+    meaningfulRatio?: number;
+    /** Blocked cells that actually constrain the route (adjacent to essential). */
+    blockingMatters?: number;
+    /** Aggregate quality score used to pick the best candidate. */
+    score?: number;
+  };
   /** Par rotations for stars (defaults to witness rotation count). */
   par?: number;
   /**
@@ -197,7 +220,7 @@ export const SCHEMA_VERSION = 1;
 export const RULESET_VERSION = 'plumber-rules/2';
 // §4: bumped to a new namespace when path/mixer diversity landed. Levels issued
 // under an older version keep their own stored definition and still replay.
-export const GENERATOR_VERSION = 'plumber-gen/0.3-diverse';
+export const GENERATOR_VERSION = 'plumber-gen/0.4-candidates';
 /** Per-pipe capacity (portions). Receivers are sinks with capacity = goal. */
 export const PIPE_CAPACITY = 4;
 export const MAX_TICKS = 1000;

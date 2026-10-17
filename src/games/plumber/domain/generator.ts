@@ -1,7 +1,8 @@
-// Plumber generator v0.2: deterministic seed → certified solvable level.
+// Plumber generator v0.4: deterministic seed → task spec → several certified
+// candidates → best kept (measured difficulty evidence).
 // Families: path | leakfix | valve | filter | mixer | program | carry |
-// multiflow | exact. Certification replays the witness through the official
-// model (no rule copies); scrambled state must NOT win (anti-trivial).
+// multiflow | exact | branch. Certification replays the witness through the
+// official model (no rule copies); scrambled state must NOT win (anti-trivial).
 import { mulberry32, seedFor } from './prng';
 import {
   GENERATOR_VERSION,
@@ -9,6 +10,9 @@ import {
   SCHEMA_VERSION,
   applyCommand,
   createRuntime,
+  neighborOf,
+  OPPOSITE,
+  PORT_ORDER,
   portsOf,
   runToEnd,
   totalVolume,
@@ -16,9 +20,14 @@ import {
   type LevelDefinition,
   type PipeKind,
   type PlumberCommand,
+  type Side,
 } from './model';
 
-export type Family = 'path' | 'leakfix' | 'valve' | 'filter' | 'mixer' | 'program' | 'carry' | 'multiflow' | 'exact';
+export type Family = 'path' | 'leakfix' | 'valve' | 'filter' | 'mixer' | 'program' | 'carry' | 'multiflow' | 'exact' | 'branch';
+
+/** How many certified candidates to build before picking the best (P2 §2.2). */
+const CANDIDATE_COUNT = 3;
+
 
 export interface GenOptions {
   mode?: 'child' | 'normal' | 'expert';
@@ -55,8 +64,18 @@ function rotForConnection(inSide: Dir, outSide: Dir): { kind: CellDef['kind']; r
   return { kind: 'elbow', rot };
 }
 
-type Edge = 'left' | 'right' | 'top' | 'bottom';
+/** Rotation whose open-side set equals `sides` for the given tile kind (P2 branch). */
+function rotForSides(kind: CellDef['kind'], sides: Side[]): number | null {
+  const want = [...new Set(sides)].sort();
+  for (let r = 0; r < 4; r++) {
+    const p = portsOf({ kind, rot: r } as CellDef, r);
+    const got = PORT_ORDER.filter((s) => p[s]).sort();
+    if (got.length === want.length && got.every((s, i) => s === want[i])) return r;
+  }
+  return null;
+}
 
+type Edge = 'left' | 'right' | 'top' | 'bottom';
 function edgeCell(edge: Edge, w: number, h: number, rng: () => number): [number, number] {
   if (edge === 'left') return [0, Math.floor(rng() * h)];
   if (edge === 'right') return [w - 1, Math.floor(rng() * h)];
@@ -171,12 +190,6 @@ function baseDef(puzzleId: string, seed: number, mode: 'child' | 'normal' | 'exp
   };
 }
 
-function finalize(def: LevelDefinition): boolean {
-  if (!certifySolvable(def)) return false;
-  if (winsWithoutWitness(def)) return false;
-  return true;
-}
-
 function tryBuildFamily(family: Family, id: string, seed: number, w: number, h: number, mode: 'child' | 'normal' | 'expert', rng: () => number, opts: GenOptions): LevelDefinition | null {
   try {
     switch (family) {
@@ -188,6 +201,7 @@ function tryBuildFamily(family: Family, id: string, seed: number, w: number, h: 
       case 'program': return buildProgram(id, seed, w, h, mode, rng, opts);
       case 'carry': return buildCarry(id, seed, w, h, mode, rng, opts);
       case 'multiflow': return buildMultiflow(id, seed, w, h, mode, rng, opts);
+      case 'branch': return buildBranch(id, seed, w, h, mode, rng, opts);
       case 'exact': return buildPath(id, seed, w, h, mode, rng, { ...opts, pipeDistractors: false, blockedCount: 3 }, 'blue', 'blue', 0, 'exact', 'exact');
     }
   } catch {
@@ -201,7 +215,12 @@ export interface AttemptOutcome {
   report: ReturnType<typeof certifyReport> | null;
 }
 
-/** Generate with per-attempt diagnostics (dev/research; shares code with generateLevel). */
+/**
+ * Generate with per-attempt diagnostics (dev/research; shares code with
+ * generateLevel). P2 §2.2: build several certified candidates from the task
+ * spec, rank them by a quality heuristic, and keep the best — so generation is
+ * task-conditioned and structurally varied, not just a single lucky build.
+ */
 export function generateLevelReport(puzzleId: string, seed: number, opts: GenOptions = {}): { level: LevelDefinition; attempts: AttemptOutcome[] } {
   const mode = opts.mode ?? 'normal';
   const sizeByMode = mode === 'child' ? { w: 3, h: 3 } : mode === 'expert' ? { w: 6, h: 6 } : { w: 5, h: 5 };
@@ -210,17 +229,34 @@ export function generateLevelReport(puzzleId: string, seed: number, opts: GenOpt
   const rng = mulberry32((seed >>> 0) ^ seedFor(puzzleId, GENERATOR_VERSION));
   const family = opts.family ?? pickFamily(mode, [], rng);
   const attempts: AttemptOutcome[] = [];
-  for (let attempt = 0; attempt < 32; attempt++) {
+  const candidates: Array<{ level: LevelDefinition; score: number }> = [];
+  for (let attempt = 0; attempt < 32 && candidates.length < CANDIDATE_COUNT; attempt++) {
     const id = `${puzzleId}#${attempt}`;
     const level = tryBuildFamily(family, id, seed, w, h, mode, rng, opts);
     if (!level) {
       attempts.push({ attempt, built: false, report: null });
       continue;
     }
-    if (finalize(level)) return { level, attempts };
-    attempts.push({ attempt, built: true, report: certifyReport(level) });
+    const report = certifyReport(level);
+    attempts.push({ attempt, built: true, report });
+    if (report.phase === 'WON' && report.volumeOk && !report.trivialWin) {
+      candidates.push({ level, score: quickScore(level) });
+    }
   }
-  return { level: fallbackLevel(puzzleId, seed, mode), attempts };
+  if (candidates.length === 0) return { level: fallbackLevel(puzzleId, seed, mode), attempts };
+  const best = candidates.reduce((a, b) => (b.score > a.score ? b : a)).level;
+  const metrics = analyzeLevel(best);
+  best.difficultyEvidence = {
+    ...best.difficultyEvidence,
+    essentialLength: metrics.essentialLength,
+    decisions: metrics.decisions,
+    falseAlternatives: metrics.falseAlternatives,
+    interactions: metrics.interactions,
+    meaningfulRatio: metrics.meaningfulRatio,
+    blockingMatters: metrics.blockingMatters,
+    score: metrics.score,
+  };
+  return { level: best, attempts };
 }
 
 export function generateLevel(puzzleId: string, seed: number, opts: GenOptions = {}): LevelDefinition {
@@ -230,10 +266,10 @@ export function generateLevel(puzzleId: string, seed: number, opts: GenOptions =
 /** Weighted family pick with anti-repeat of the recent families. */
 export function pickFamily(mode: 'child' | 'normal' | 'expert', recent: string[], rng: () => number): Family {
   const table: Family[] = mode === 'child'
-    ? ['path', 'path', 'path', 'leakfix']
+    ? ['path', 'path', 'path', 'leakfix', 'branch']
     : mode === 'expert'
-      ? ['path', 'leakfix', 'valve', 'filter', 'mixer', 'program', 'carry', 'multiflow', 'exact']
-      : ['path', 'path', 'leakfix', 'valve', 'filter', 'carry', 'multiflow', 'exact'];
+      ? ['path', 'leakfix', 'valve', 'filter', 'mixer', 'program', 'carry', 'multiflow', 'exact', 'branch']
+      : ['path', 'path', 'leakfix', 'valve', 'filter', 'carry', 'multiflow', 'exact', 'branch'];
   const last = recent[recent.length - 1];
   for (let i = 0; i < 8; i++) {
     const f = table[Math.floor(rng() * table.length)];
@@ -472,6 +508,68 @@ function buildMultiflow(
   return def;
 }
 
+function buildBranch(
+  puzzleId: string, seed: number, w: number, h: number, mode: 'child' | 'normal' | 'expert',
+  rng: () => number, opts: GenOptions,
+): LevelDefinition | null {
+  const path = routePath(w, h, rng);
+  if (!path || path.length < 4) return null;
+  const laid = layPath(w, h, path);
+  if (!laid) return null;
+  const { cells, pathSet, interior } = laid;
+  const SIDES_IDX = { top: 0, right: 1, bottom: 2, left: 3 } as const;
+  const sourceCell = idx(path[0][0], path[0][1], w);
+  const receiverCell = idx(path[path.length - 1][0], path[path.length - 1][1], w);
+  const d0 = DIR_OF(path[0], path[1]);
+  cells[sourceCell] = { kind: 'source', rot: (SIDES_IDX[d0] - SIDES_IDX.right + 4) % 4 };
+  const d1 = DIR_OF(path[path.length - 2], path[path.length - 1]);
+  cells[receiverCell] = { kind: 'receiver', rot: (SIDES_IDX[OPP(d1)] - SIDES_IDX.left + 4) % 4 };
+  // Turn one interior route cell into a T that also opens toward an empty
+  // neighbour; that neighbour becomes a second receiver so the flow splits.
+  const spots: Array<{ at: number; side: Dir; to: number }> = [];
+  for (const ci of interior) {
+    const x = ci % w;
+    const y = Math.floor(ci / w);
+    if (x > 0 && !pathSet.has(ci - 1)) spots.push({ at: ci, side: 'left', to: ci - 1 });
+    if (x < w - 1 && !pathSet.has(ci + 1)) spots.push({ at: ci, side: 'right', to: ci + 1 });
+    if (y > 0 && !pathSet.has(ci - w)) spots.push({ at: ci, side: 'top', to: ci - w });
+    if (y < h - 1 && !pathSet.has(ci + w)) spots.push({ at: ci, side: 'bottom', to: ci + w });
+  }
+  if (spots.length === 0) return null;
+  const spot = spots[Math.floor(rng() * spots.length)];
+  const atX = spot.at % w;
+  const atY = Math.floor(spot.at / w);
+  const prev = path[path.findIndex(([px, py]) => idx(px, py, w) === spot.at) - 1];
+  const next = path[path.findIndex(([px, py]) => idx(px, py, w) === spot.at) + 1];
+  if (!prev || !next) return null;
+  const inSide = OPP(DIR_OF(prev, [atX, atY]));
+  const outSide = DIR_OF([atX, atY], next);
+  const tRot = rotForSides('t', [inSide, outSide, spot.side]);
+  if (tRot === null || inSide === spot.side || outSide === spot.side) return null;
+  cells[spot.at] = { kind: 't', rot: tRot };
+  cells[spot.to] = { kind: 'receiver', rot: (SIDES_IDX[OPP(spot.side)] - SIDES_IDX.left + 4) % 4 };
+  const used = new Set(pathSet);
+  used.add(spot.to);
+  addDistractors(cells, used, rng, opts.blockedCount ?? (mode === 'child' ? 0 : 2), opts.pipeDistractors ?? true);
+  const locked = new Set<number>();
+  const witness = scramble(cells, interior, rng, locked);
+  if (witness.length === 0) return null;
+  const goalA = mode === 'expert' ? 4 : mode === 'child' ? 2 : 3;
+  const goalB = mode === 'expert' ? 3 : 2;
+  return {
+    ...baseDef(puzzleId, seed, mode, 'branch', w, h),
+    cells,
+    sources: [{ cell: sourceCell, color: 'blue', portions: goalA + goalB + 2 }],
+    receivers: [
+      { cell: receiverCell, color: 'blue', goal: goalA, kind: 'auto' },
+      { cell: spot.to, color: 'blue', goal: goalB, kind: 'auto' },
+    ],
+    solutionWitness: witness,
+    difficultyEvidence: { pathLength: path.length, rotatable: interior.length, branches: 2 },
+    par: witness.length,
+  };
+}
+
 /** Detailed certification report (dev diagnostics, replay evidence). */
 export function certifyReport(def: LevelDefinition): { phase: string; got: number[]; lost: number; errorKind: string | null; volumeOk: boolean; trivialWin: boolean } {
   const s = createRuntime(def);
@@ -529,6 +627,236 @@ export function logicalFingerprint(def: LevelDefinition): string {
     .sort()
     .join(',');
   return `${def.gridW}x${def.gridH}|${def.family}|${grid}|${io}`;
+}
+
+// ── P2: structure metrics, canonical fingerprint, action-type similarity ──────
+
+const SIDES: Side[] = ['top', 'right', 'bottom', 'left'];
+
+/** Solved rotations after replaying the witness (analysis only; never mutates def). */
+function solvedRots(def: LevelDefinition): number[] {
+  const s = createRuntime(def);
+  for (const cmd of def.solutionWitness) applyCommand(s, cmd);
+  return [...s.rots];
+}
+
+export interface LevelMetrics {
+  essentialLength: number;
+  decisions: number;
+  falseAlternatives: number;
+  interactions: number;
+  meaningfulRatio: number;
+  blockingMatters: number;
+  score: number;
+}
+
+const ROTATABLE_KINDS: ReadonlySet<CellDef['kind']> = new Set(['straight', 'elbow', 't', 'cross']);
+
+function isPlayableKind(kind: CellDef['kind']): boolean {
+  return kind !== 'empty' && kind !== 'blocked';
+}
+
+function isTransferKind(kind: CellDef['kind']): boolean {
+  return isPlayableKind(kind) && kind !== 'source' && kind !== 'receiver';
+}
+
+function reachable(from: number[], def: LevelDefinition, rots: number[]): Set<number> {
+  const { gridW: w, gridH: h } = def;
+  const seen = new Set<number>(from);
+  const queue = [...from];
+  while (queue.length) {
+    const i = queue.shift() as number;
+    const p = portsOf(def.cells[i], rots[i]);
+    for (const side of SIDES) {
+      if (!p[side]) continue;
+      const n = neighborOf(i, side, w, h);
+      if (n === null) continue;
+      const np = portsOf(def.cells[n], rots[n]);
+      if (!np[OPPOSITE[side]]) continue;
+      if (!seen.has(n)) { seen.add(n); queue.push(n); }
+    }
+  }
+  return seen;
+}
+
+/**
+ * Measurable level quality (P2 §2.3/§2.4): how long and how decided the
+ * essential route is, how many real false directions and interaction types it
+ * carries, how much of the field is meaningful, and whether blockers actually
+ * constrain the route. `score` is the single number the candidate layer ranks by.
+ */
+export function analyzeLevel(def: LevelDefinition): LevelMetrics {
+  const rots = solvedRots(def);
+  const total = def.cells.length;
+  const reach = reachable(def.sources.map((s) => s.cell), def, rots);
+  const toRecv = reachable(def.receivers.map((r) => r.cell), def, rots);
+  let essentialLength = 0;
+  let decisions = 0;
+  let falseAlternatives = 0;
+  let playable = 0;
+  const essential = new Set<number>();
+  def.cells.forEach((c, i) => {
+    if (isPlayableKind(c.kind)) playable += 1;
+    if (!isTransferKind(c.kind) || !reach.has(i)) return;
+    if (toRecv.has(i)) {
+      essential.add(i);
+      essentialLength += 1;
+      if (ROTATABLE_KINDS.has(c.kind) && !c.locked) decisions += 1;
+    } else {
+      falseAlternatives += 1;
+    }
+  });
+  let blockingMatters = 0;
+  def.cells.forEach((c, i) => {
+    if (c.kind !== 'blocked') return;
+    for (const side of SIDES) {
+      const n = neighborOf(i, side, def.gridW, def.gridH);
+      if (n !== null && essential.has(n)) { blockingMatters += 1; break; }
+    }
+  });
+  const interactions = new Set(def.solutionWitness.map((c) => c.type)).size;
+  const emptyRatio = (total - playable) / total;
+  const score = Number((
+    essentialLength * 0.4 +
+    decisions * 1.4 +
+    interactions * 2.0 +
+    (playable / total) * 5 +
+    blockingMatters * 0.8 +
+    Math.min(falseAlternatives, 3) * 0.6 -
+    emptyRatio * 2
+  ).toFixed(3));
+  return {
+    essentialLength,
+    decisions,
+    falseAlternatives,
+    interactions,
+    meaningfulRatio: Number((playable / total).toFixed(4)),
+    blockingMatters,
+    score,
+  };
+}
+
+/** Cheap, runtime-free ranking heuristic (candidate layer; refine winner after). */
+function quickScore(def: LevelDefinition): number {
+  const total = def.cells.length;
+  let playable = 0;
+  let blocked = 0;
+  for (const c of def.cells) {
+    if (c.kind === 'empty') continue;
+    if (c.kind === 'blocked') blocked += 1;
+    else playable += 1;
+  }
+  const par = def.par ?? def.solutionWitness.filter((c) => c.type === 'rotate').length;
+  const interactions = new Set(def.solutionWitness.map((c) => c.type)).size;
+  return Number((par * 1.2 + interactions * 2 + def.receivers.length * 1.5 + (playable / total) * 5 - (blocked / total) * 1.5).toFixed(3));
+}
+
+function rotSide(side: Side, q: number): Side {
+  return SIDES[(SIDES.indexOf(side) + q) % 4];
+}
+
+/** Rotate a grid coordinate q quarter-turns clockwise on an N×N board. */
+function rotateXY(x: number, y: number, n: number, q: number): [number, number] {
+  let cx = x;
+  let cy = y;
+  const last = n - 1;
+  for (let k = 0; k < q; k++) {
+    const nx = last - cy;
+    cy = cx;
+    cx = nx;
+  }
+  return [cx, cy];
+}
+
+function canonicalTokens(def: LevelDefinition, q: number): string[] {
+  const { gridW: w, gridH: h } = def;
+  const out: string[] = Array.from({ length: w * h }, () => '0000');
+  def.cells.forEach((c, i) => {
+    const [nx, ny] = rotateXY(i % w, Math.floor(i / w), w, q);
+    const p = portsOf(c, c.rot);
+    out[ny * w + nx] = SIDES.map((s) => (p[rotSide(s, (4 - q) % 4)] ? '1' : '0')).join('');
+  });
+  const io: string[] = [];
+  for (const s of def.sources) {
+    const [nx, ny] = rotateXY(s.cell % w, Math.floor(s.cell / w), w, q);
+    io.push(`S${ny * w + nx}:${s.color}:${s.portions}`);
+  }
+  for (const r of def.receivers) {
+    const [nx, ny] = rotateXY(r.cell % w, Math.floor(r.cell / w), w, q);
+    io.push(`R${ny * w + nx}:${r.color}:${r.goal}:${r.kind ?? 'auto'}`);
+  }
+  return [...out, `#${io.sort().join(',')}`];
+}
+
+function bestCanonical(def: LevelDefinition): { key: string; tokens: string[] } {
+  const qs = def.gridW === def.gridH ? [0, 1, 2, 3] : [0];
+  let best: { key: string; tokens: string[] } | null = null;
+  for (const q of qs) {
+    const tokens = canonicalTokens(def, q);
+    const key = tokens.join('|');
+    if (best === null || key < best.key) best = { key, tokens };
+  }
+  return best as { key: string; tokens: string[] };
+}
+
+/**
+ * §2.3 canonical logical fingerprint: rotation-invariant pipe connectivity +
+ * source/receiver roles. Two levels that differ only by a quarter-turn share a
+ * fingerprint, so variety checks cannot be satisfied by cosmetically re-orienting
+ * one shape. (Reflections are intentionally excluded: the tile set is not
+ * mirror-symmetric, so a mirrored layout is a genuinely different puzzle.)
+ */
+export function canonicalFingerprint(def: LevelDefinition): string {
+  return bestCanonical(def).key;
+}
+
+/**
+ * §2.3 structural similarity in [0,1]: 1 for rotation-equivalent levels, else a
+ * blend of canonical cell-mask overlap and route/action metrics.
+ */
+export function structuralSimilarity(a: LevelDefinition, b: LevelDefinition): number {
+  if (bestCanonical(a).key === bestCanonical(b).key) return 1;
+  let cellSim = 0;
+  if (a.gridW === b.gridW && a.gridH === b.gridH) {
+    const ta = bestCanonical(a).tokens;
+    const tb = bestCanonical(b).tokens;
+    let same = 0;
+    for (let i = 0; i < ta.length; i++) if (ta[i] === tb[i]) same += 1;
+    cellSim = same / ta.length;
+  }
+  const ma = analyzeLevel(a);
+  const mb = analyzeLevel(b);
+  const d = (x: number, y: number, scale: number) => Math.min(1, Math.abs(x - y) / scale);
+  const metricSim = 1 - (d(ma.essentialLength, mb.essentialLength, 12) + d(ma.decisions, mb.decisions, 10) + d(ma.interactions, mb.interactions, 4)) / 3;
+  const sim = cellSim > 0 ? 0.7 * cellSim + 0.3 * metricSim : 0.5 * metricSim;
+  return Number(Math.max(0, sim).toFixed(4));
+}
+
+/** Rotate a whole level q quarter-turns clockwise (test/analysis helper). */
+export function rotateLevelCW(def: LevelDefinition, q = 1): LevelDefinition {
+  const turns = ((q % 4) + 4) % 4;
+  const { gridW: w } = def;
+  const out: CellDef[] = Array.from({ length: def.cells.length }, () => ({ kind: 'empty' as const, rot: 0 }));
+  def.cells.forEach((c, i) => {
+    const [nx, ny] = rotateXY(i % w, Math.floor(i / w), w, turns);
+    out[ny * w + nx] = { ...c, rot: (c.rot + turns) % 4 };
+  });
+  const remap = (cell: number): number => {
+    const [nx, ny] = rotateXY(cell % w, Math.floor(cell / w), w, turns);
+    return ny * w + nx;
+  };
+  return {
+    ...def,
+    cells: out,
+    sources: def.sources.map((s) => ({ ...s, cell: remap(s.cell) })),
+    receivers: def.receivers.map((r) => ({ ...r, cell: remap(r.cell) })),
+    solutionWitness: def.solutionWitness.map((c) => {
+      const raw = c as unknown as Record<string, unknown>;
+      return typeof raw.index === 'number'
+        ? ({ ...c, index: remap(raw.index as number) } as PlumberCommand)
+        : ({ ...c } as PlumberCommand);
+    }),
+  };
 }
 
 function fallbackLevel(puzzleId: string, seed: number, mode: 'child' | 'normal' | 'expert'): LevelDefinition {
