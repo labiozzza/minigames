@@ -104,3 +104,13 @@
 | §19.4 | `docs/remediation-report.md` | `docs/remediation-report.md` | создан | PASS |
 | §19.5 | `docs/DEPLOY.md`: split, Postgres, HTTPS, DNS, бэкапы, откат, smoke, запрет на VPS без разрешения | `docs/DEPLOY.md` | переписан | PASS |
 | §19.6 | Не коммитить бинарные кэши/секреты, поправить .gitignore | `.gitignore` (`__pycache__/`, `*.pyc`) | `0376074` | PASS |
+
+## Дополнительная матрица: правки по дефектам плейтеста (2026-10-17)
+
+| ID | Пункт | Где | Доказательство | Статус |
+|---|---|---|---|---|
+| D1 | Ориентация труб на первом кадре | `…/presentation/scene.ts`, `game.ts` | rots==angles на первом кадре; `evidence/screenshots/plumber-orientation-fixed.png` | PASS |
+| D2 | Нет блокировки ввода после проигрыша (fix/retry) | `game.ts`, `i18n`, `.banner-actions` | браузер: FAILED→«Исправить трубы»/«Повторить»; тап разблокирован | PASS |
+| D3 | Объёмная жидкость «внутри» трубы | `…/presentation/scene.ts` | слоистая вода + плавная доливка; `plumber-water-midfill.png` | PASS |
+| D4 | Разнообразие уровней (маршруты/края/семьи), версия генератора | `…/domain/generator.ts`, `model.ts`, `tests/levels/plumber-mass.test.ts` | 10 350 ур.: 0 fallback, overlap 3.6%, направления по всем краям; `evidence/plumber-mass-report.json`, `plumber-diversity-sample.json` | PASS |
+| D5 | Графика препятствий/окружения (через assetgen) | `assetgen-work/*`, `docs/assetgen-status.md` | 2 кандидата VALID_TECH, `MANUAL_REVIEW_REQUIRED`; бюджет medium 13/16 | PARTIAL (визуальный гейт открыт; в игре — примитивы) |
