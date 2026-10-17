@@ -16,7 +16,15 @@ declare global {
     };
     __MG_TEST__: {
       save(): {
-        games: Record<string, { completed: number[]; maxLevel: number; stars: Record<string, number>; collections: string[]; active: { levelNumber: number } | null }>;
+        games: Record<string, {
+          completed: number[];
+          maxLevel: number;
+          stars: Record<string, number>;
+          collections: string[];
+          active: { levelNumber: number } | null;
+          modes?: Record<string, { maxLevel: number; completed: number[]; active: { levelNumber: number } | null }>;
+          selected?: string;
+        }>;
         conflicts?: Record<string, unknown>;
       };
       status(): { state: string; pending: number };

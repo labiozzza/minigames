@@ -232,36 +232,61 @@ describe('config, admin, telemetry', () => {
 });
 
 describe('sync: idempotency, stats merge, CORS, test-only OTP', () => {
+  // One login for the whole block: each login consumes a per-IP OTP request,
+  // and the rate limiter is intentionally shared across the test IP.
+  let token = '';
+  beforeAll(async () => {
+    token = await login('syncsuite@example.com');
+  });
+
   it('resending the same event uuid never double-counts wins', async () => {
-    const token = await login('idem@example.com');
     const ev = { uuid: 'u-fixed-1', kind: 'win', level: 3, stars: 2, mode: 'normal', family: 'valve' };
     const first = await api('/games/plumber/sync', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ events: [ev], baseVersion: 1 }) });
     expect(first.body.applied).toBe(1);
     const second = await api('/games/plumber/sync', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ events: [ev] }) });
     expect(second.body.applied).toBe(0);
     const save = await api('/games/plumber/save', { headers: AUTH(token) });
-    const data = save.body.save as { data: { completed: number[]; stars: Record<string, number> } };
+    const data = save.body.save as { data: { completed: number[]; stars: Record<string, number>; modes: Record<string, { maxLevel: number; completed: number[] }> } };
     expect(data.data.completed).toEqual([3]);
     expect(data.data.stars['normal:3']).toBe(2);
+    expect(data.data.modes.normal.completed).toEqual([3]);
+    expect(data.data.modes.normal.maxLevel).toBe(4);
+  });
+
+  it('keeps per-mode progress independent on the server (TZ v1.2 §5)', async () => {
+    const evs = [
+      { uuid: 'm-child-1', kind: 'win', level: 1, stars: 3, mode: 'child', family: 'path' },
+      { uuid: 'm-child-2', kind: 'win', level: 2, stars: 3, mode: 'child', family: 'path' },
+      { uuid: 'm-expert-1', kind: 'win', level: 1, stars: 1, mode: 'expert', family: 'valve' },
+    ];
+    const r = await api('/games/plumber-modes/sync', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ events: evs }) });
+    expect(r.body.applied).toBe(3);
+    const save = await api('/games/plumber-modes/save', { headers: AUTH(token) });
+    const modes = (save.body.save as { data: { modes: Record<string, { maxLevel: number; completed: number[] }> } }).data.modes;
+    expect(modes.child.completed).toEqual([1, 2]);
+    expect(modes.child.maxLevel).toBe(3);
+    expect(modes.expert.completed).toEqual([1]);
+    expect(modes.expert.maxLevel).toBe(2);
+    expect(modes.normal.completed).toEqual([]);
+    expect(modes.normal.maxLevel).toBe(1);
   });
 
   it('merges stats deltas across modes additively (once per uuid)', async () => {
-    const token = await login('stats@example.com');
     const evs = [
       { uuid: 's1', kind: 'stats', mode: 'normal', delta: { attempts: 1 } },
       { uuid: 's2', kind: 'stats', mode: 'normal', delta: { hints: 2 } },
       { uuid: 's3', kind: 'stats', mode: 'expert', delta: { wins: 1 } },
     ];
-    const r = await api('/games/plumber/sync', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ events: evs }) });
+    const r = await api('/games/plumber-stats/sync', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ events: evs }) });
     expect(r.body.applied).toBe(3);
-    const save = await api('/games/plumber/save', { headers: AUTH(token) });
+    const save = await api('/games/plumber-stats/save', { headers: AUTH(token) });
     const stats = (save.body.save as { data: { stats: Record<string, { attempts: number; hints: number; wins: number }> } }).data.stats;
     expect(stats.normal.attempts).toBe(1);
     expect(stats.normal.hints).toBe(2);
     expect(stats.expert.wins).toBe(1);
-    const again = await api('/games/plumber/sync', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ events: evs }) });
+    const again = await api('/games/plumber-stats/sync', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ events: evs }) });
     expect(again.body.applied).toBe(0);
-    const save2 = await api('/games/plumber/save', { headers: AUTH(token) });
+    const save2 = await api('/games/plumber-stats/save', { headers: AUTH(token) });
     const stats2 = (save2.body.save as { data: { stats: Record<string, { hints: number }> } }).data.stats;
     expect(stats2.normal.hints).toBe(2);
   });

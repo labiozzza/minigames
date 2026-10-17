@@ -139,6 +139,20 @@ button { font: inherit; color: inherit; }
 
 /* Level grid */
 .level-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 8px; margin-top: 8px; }
+.level-grid .level-btn {
+  min-height: 52px; border-radius: 10px; border: 1px solid var(--surface-2);
+  background: var(--surface-2); color: inherit; cursor: pointer; font-size: 15px;
+}
+.level-grid .level-btn.active { outline: 3px solid var(--accent); }
+
+/* Difficulty selector (§5): large, explicit, always a deliberate choice. */
+.mode-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+.mode-row .mode-btn {
+  min-height: 60px; border-radius: 12px; border: 2px solid var(--surface-2);
+  background: var(--surface-2); color: inherit; cursor: pointer; font-size: 16px; font-weight: 600;
+}
+.mode-row .mode-btn.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--surface-2)); }
+.top-actions .mode-btn { min-width: 34px; font-weight: 700; }
 .level-cell {
   min-height: 48px; border-radius: 10px; border: 1px solid var(--surface-2);
   background: var(--surface-2); cursor: pointer; font-size: 15px;

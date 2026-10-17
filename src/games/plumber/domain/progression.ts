@@ -24,6 +24,33 @@ export function familyForLevel(level: number): Family {
   return rest[x % rest.length];
 }
 
+// Per-mode curriculum (§5): level numbers are local to each mode, so the family
+// schedule must depend on the mode, not on a shared global level number. Pools
+// mirror the generator's per-mode family table so we never force a family the
+// mode cannot build.
+const MODE_POOL: Record<Mode, Family[]> = {
+  child: ['path', 'leakfix'],
+  normal: ['path', 'leakfix', 'valve', 'filter', 'carry', 'multiflow', 'exact'],
+  expert: ['path', 'leakfix', 'valve', 'filter', 'mixer', 'program', 'carry', 'multiflow', 'exact'],
+};
+
+const MODE_CURRICULUM: Record<Mode, Family[]> = {
+  child: ['path', 'path', 'path', 'leakfix'],
+  normal: ['path', 'path', 'path', 'leakfix', 'valve', 'filter', 'carry', 'path', 'multiflow', 'exact', 'valve', 'filter'],
+  expert: ['path', 'leakfix', 'valve', 'filter', 'mixer', 'program', 'carry', 'multiflow', 'exact', 'program', 'mixer', 'exact'],
+};
+
+/** Deterministic per-mode family: curriculum first, then a stable cycle. */
+export function familyForMode(mode: Mode, level: number): Family {
+  const c = MODE_CURRICULUM[mode];
+  if (level <= c.length) return c[level - 1];
+  const pool = MODE_POOL[mode];
+  let x = (level * 2654435761) >>> 0;
+  x ^= x >> 15;
+  x = Math.imul(x, 0x2c1b3c6d) >>> 0;
+  return pool[x % pool.length];
+}
+
 /** Stars from efficiency: witness par vs player rotations + hints. */
 export function computeStars(parRotations: number, playerRotations: number, hintsUsed: number): 1 | 2 | 3 {
   const score = playerRotations - parRotations + hintsUsed * 2;

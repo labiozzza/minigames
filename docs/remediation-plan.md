@@ -52,7 +52,8 @@ full: `04_PLUMBER_REMEDIATION_TZ_v1.2.md`, `README.md`,
 | 2026-10-17 | `eef6817` | §2 client↔account↔backend sync (whole platform) | DONE | unit sync-merge (7), server idempotency/stats/CORS/OTP (4), e2e `sync.spec.ts` 2/2 (two contexts) |
 | 2026-10-17 | `364a59e` | §11 short codes preserve `(mode, level)`; shared progress isolated | DONE | unit round-trip; e2e `share.spec.ts` 2/2 (identical across contexts) |
 | 2026-10-17 | `cbcd733` | §6 generator/solver proof at scale | DONE | 10000+ mass, 0 fails; `diagnose()` statuses; `evidence/plumber-mass-report.json` |
-| — | — | §5 modes, §7 input/camera, §8 onboarding, §9 art**, §10 daily+weekly, §12 a11y/quality, §13 versioning | TODO | — |
+| 2026-10-17 | _§5_ | §5 three independent selectable modes + lossless v1→v2 migration | DONE | save schema v2 (`modes`/`selected`, per-mode `maxLevel/completed/active`, mirror kept); per-mode family schedule; server `modes` merge; mode-selector UI. Tests: `plumber-save` (11 incl. migration/stability/no-loss), server per-mode (2), e2e `modes.spec.ts` 2/2 (desktop) |
+| — | — | §7 input/camera, §8 onboarding, §9 art**, §10 daily+weekly, §12 a11y/quality, §13 versioning | TODO | — |
 | — | — | §14–§18 P2 | TODO | — |
 
 ** Art-dependent item: temporary geometric prototypes allowed, kept `BLOCKED_ASSET`

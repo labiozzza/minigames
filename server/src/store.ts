@@ -90,19 +90,33 @@ function blankStats(): Record<string, { attempts: number; wins: number; hints: n
   return { child: z(), normal: z(), expert: z() };
 }
 
+function blankModes(): Record<string, { maxLevel: number; completed: number[] }> {
+  const z = () => ({ maxLevel: 1, completed: [] as number[] });
+  return { child: z(), normal: z(), expert: z() };
+}
+
 function blankSave(): SaveRec {
-  return { version: 1, updatedAt: Date.now(), seen: [], active: null, data: { completed: [], maxLevel: 1, stars: {}, fams: {}, collections: [], dailies: {}, stats: blankStats() } };
+  return { version: 1, updatedAt: Date.now(), seen: [], active: null, data: { completed: [], maxLevel: 1, stars: {}, fams: {}, collections: [], dailies: {}, stats: blankStats(), modes: blankModes() } };
 }
 
 /** Monotonic merge of a single validated event into a save. Idempotent by caller. */
 export function applyEvent(save: { data: Record<string, unknown> }, e: Record<string, unknown>): void {
   const d = save.data;
   if (e.kind === 'win') {
+    const mode = String(e.mode ?? 'normal');
     const completed = Array.isArray(d.completed) ? (d.completed as number[]) : [];
     if (typeof e.level === 'number' && !completed.includes(e.level)) completed.push(e.level);
     d.completed = [...completed].sort((a, b) => a - b);
     if (typeof e.level === 'number' && typeof d.maxLevel === 'number') {
       d.maxLevel = Math.max(d.maxLevel, e.level + 1);
+    }
+    // Per-mode independent progress (TZ v1.2 §5).
+    const modes = d.modes as Record<string, { maxLevel: number; completed: number[] }> | undefined;
+    if (modes && modes[mode] && typeof e.level === 'number') {
+      const mc = Array.isArray(modes[mode].completed) ? modes[mode].completed : [];
+      if (!mc.includes(e.level)) mc.push(e.level);
+      modes[mode].completed = [...mc].sort((a, b) => a - b);
+      modes[mode].maxLevel = Math.max(modes[mode].maxLevel ?? 1, e.level + 1);
     }
     if (typeof e.level === 'number' && typeof e.stars === 'number' && d.stars && typeof d.stars === 'object') {
       const key = `${String(e.mode ?? 'normal')}:${e.level}`;

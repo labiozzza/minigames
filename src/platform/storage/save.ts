@@ -5,7 +5,7 @@ import { DEFAULT_SETTINGS, sanitizeSettings, type Settings } from '../settings/s
 
 export const SAVE_KEY = 'save-v1';
 export const BACKUP_KEY = 'save-backup-v1';
-export const SAVE_SCHEMA = 1;
+export const SAVE_SCHEMA = 2;
 export const EXPORT_FORMAT = 'minigames-progress/1';
 
 export interface WaterSortSessionSave {
@@ -130,6 +130,15 @@ export interface PlumberModeStats {
   skips: number;
 }
 
+export type PlumberMode = 'child' | 'normal' | 'expert';
+
+/** Independent progress for one difficulty mode (TZ v1.2 §5). */
+export interface PlumberModeProgress {
+  maxLevel: number;
+  completed: number[];
+  active: PlumberSessionSave | null;
+}
+
 export interface PlumberSave {
   maxLevel: number;
   completed: number[];
@@ -141,6 +150,23 @@ export interface PlumberSave {
   dailies: Record<string, number>;
   /** level -> {family, mode} recorded at win time (collections/stats). */
   fams: Record<string, { family: string; mode: string }>;
+  /** Per-mode independent progress; `selected` is the last chosen mode. */
+  modes: Record<PlumberMode, PlumberModeProgress>;
+  selected: PlumberMode;
+}
+
+export const PLUMBER_MODES: PlumberMode[] = ['child', 'normal', 'expert'];
+
+/** First global level number of each mode in the legacy single progression. */
+const LEGACY_OFFSET: Record<PlumberMode, number> = { child: 1, normal: 3, expert: 13 };
+
+/** Mode a legacy (single-track) level number belonged to. */
+function legacyModeOf(level: number): PlumberMode {
+  return level <= 2 ? 'child' : level <= 12 ? 'normal' : 'expert';
+}
+
+function emptyModeProgress(): PlumberModeProgress {
+  return { maxLevel: 1, completed: [], active: null };
 }
 
 export type GameSave = WaterSortSave | PlumberSave;
@@ -194,6 +220,69 @@ function validFams(v: unknown): Record<string, { family: string; mode: string }>
   return out;
 }
 
+const numArrOf = (v: unknown): v is number[] => Array.isArray(v) && v.every((n) => typeof n === 'number');
+const boolArrOf = (v: unknown, len: number): v is boolean[] => Array.isArray(v) && v.length === len && v.every((n) => typeof n === 'boolean');
+const PHASES = ['PREPARING', 'RUNNING', 'PAUSED', 'WON', 'FAILED', 'STOPPED'];
+
+/** Validate + backfill a stored unfinished plumber session. Never throws. */
+function parsePlumberActive(raw: unknown): PlumberSessionSave | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const a = raw as Record<string, unknown>;
+  if (
+    typeof a.levelNumber !== 'number' || typeof a.puzzleId !== 'string' || typeof a.seed !== 'number' ||
+    (a.mode !== 'child' && a.mode !== 'normal' && a.mode !== 'expert') ||
+    typeof a.gridW !== 'number' || typeof a.gridH !== 'number' ||
+    !numArrOf(a.rots) || !numArrOf(a.water) || !Array.isArray(a.waterColor) ||
+    !numArrOf(a.sourceLeft) || !numArrOf(a.receiverGot) ||
+    typeof a.lost !== 'number' || typeof a.tick !== 'number' || typeof a.phase !== 'string' || !PHASES.includes(a.phase)
+  ) {
+    return null;
+  }
+  const cells = (a.gridW as number) * (a.gridH as number);
+  const srcs = (a.sourceLeft as number[]).length;
+  if (a.rots.length !== cells || a.water.length !== cells || (a.waterColor as unknown[]).length !== cells) return null;
+  if (!isPlumberDef(a.def, a.gridW as number, a.gridH as number)) return null;
+  const full = a as unknown as PlumberSessionSave;
+  if (!boolArrOf(full.valves, cells)) full.valves = new Array<boolean>(cells).fill(true);
+  if (!Array.isArray(full.mixerStock)) full.mixerStock = Array.from({ length: cells }, () => []);
+  if (!numArrOf(full.distCount)) full.distCount = new Array<number>(cells).fill(0);
+  if (!boolArrOf(full.sourceEnabled, srcs)) full.sourceEnabled = new Array<boolean>(srcs).fill(true);
+  if (!numArrOf(full.receivedTotal)) full.receivedTotal = [...full.receiverGot];
+  if (typeof full.fedTotal !== 'number') full.fedTotal = 0;
+  if (!Array.isArray(full.inventoryLeft)) full.inventoryLeft = [];
+  if (!Array.isArray(full.program)) full.program = [];
+  if (!Array.isArray(full.cameFrom)) full.cameFrom = [];
+  if (typeof full.programCounter !== 'number') full.programCounter = 0;
+  if (typeof full.idleTicks !== 'number') full.idleTicks = 0;
+  if (typeof full.playerRotations !== 'number') full.playerRotations = 0;
+  if (typeof full.hintsUsed !== 'number') full.hintsUsed = 0;
+  return full;
+}
+
+function validCompleted(v: unknown): number[] {
+  return Array.isArray(v)
+    ? [...new Set(v.filter((n): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1))].sort((a, b) => a - b)
+    : [];
+}
+
+function parseModes(raw: unknown): Record<PlumberMode, PlumberModeProgress> | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  if (!o.child && !o.normal && !o.expert) return null;
+  const out: Record<PlumberMode, PlumberModeProgress> = { child: emptyModeProgress(), normal: emptyModeProgress(), expert: emptyModeProgress() };
+  for (const m of PLUMBER_MODES) {
+    const mp = o[m];
+    if (!mp || typeof mp !== 'object') continue;
+    const mpo = mp as Record<string, unknown>;
+    out[m].completed = validCompleted(mpo.completed);
+    out[m].maxLevel = typeof mpo.maxLevel === 'number' && Number.isFinite(mpo.maxLevel)
+      ? Math.max(1, Math.floor(mpo.maxLevel))
+      : Math.max(1, (out[m].completed[out[m].completed.length - 1] ?? 0) + 1);
+    out[m].active = parsePlumberActive(mpo.active);
+  }
+  return out;
+}
+
 export function emptyPlumber(): PlumberSave {
   return {
     maxLevel: 1,
@@ -205,7 +294,68 @@ export function emptyPlumber(): PlumberSave {
     stats: { child: { attempts: 0, wins: 0, hints: 0, skips: 0 }, normal: { attempts: 0, wins: 0, hints: 0, skips: 0 }, expert: { attempts: 0, wins: 0, hints: 0, skips: 0 } },
     dailies: {},
     fams: {},
+    modes: { child: emptyModeProgress(), normal: emptyModeProgress(), expert: emptyModeProgress() },
+    selected: 'child',
   };
+}
+
+/** Keep the legacy flat fields mirrored to the selected mode (readers/compat). */
+export function syncPlumberMirror(slot: PlumberSave): void {
+  const p = slot.modes[slot.selected];
+  slot.maxLevel = p.maxLevel;
+  slot.completed = [...p.completed];
+  slot.active = p.active;
+}
+
+/**
+ * Migrate a legacy (pre-modes) plumber slot to per-mode progress. Levels are
+ * renumbered to 1-based within each mode; stars/fams keys are renumbered so no
+ * progress is lost. Pure and deterministic.
+ */
+function deriveModesFromLegacy(
+  completed: number[],
+  stars: Record<string, number>,
+  fams: Record<string, { family: string; mode: string }>,
+  active: PlumberSessionSave | null,
+): { modes: Record<PlumberMode, PlumberModeProgress>; stars: Record<string, number>; fams: Record<string, { family: string; mode: string }>; selected: PlumberMode } {
+  const modes: Record<PlumberMode, PlumberModeProgress> = { child: emptyModeProgress(), normal: emptyModeProgress(), expert: emptyModeProgress() };
+  const local = (m: PlumberMode, level: number): number => Math.max(1, level - LEGACY_OFFSET[m] + 1);
+  for (const level of completed) {
+    const m = legacyModeOf(level);
+    const lv = local(m, level);
+    if (!modes[m].completed.includes(lv)) modes[m].completed.push(lv);
+  }
+  for (const m of PLUMBER_MODES) {
+    modes[m].completed.sort((a, b) => a - b);
+    modes[m].maxLevel = Math.max(1, (modes[m].completed[modes[m].completed.length - 1] ?? 0) + 1);
+  }
+  const starsOut: Record<string, number> = {};
+  for (const [k, v] of Object.entries(stars)) {
+    const mm = /^(child|normal|expert):(\d+)$/.exec(k);
+    if (mm) {
+      const m = mm[1] as PlumberMode;
+      starsOut[`${m}:${local(m, Number(mm[2]))}`] = v;
+    } else {
+      starsOut[k] = v;
+    }
+  }
+  const famsOut: Record<string, { family: string; mode: string }> = {};
+  for (const [k, v] of Object.entries(fams)) {
+    const m = (v.mode === 'child' || v.mode === 'normal' || v.mode === 'expert' ? v.mode : legacyModeOf(Number(k))) as PlumberMode;
+    famsOut[String(local(m, Number(k)))] = v;
+  }
+  let selected: PlumberMode = 'child';
+  if (active) {
+    const m = (active.mode as PlumberMode) ?? 'child';
+    const lv = local(m, active.levelNumber);
+    active = { ...active, levelNumber: lv };
+    modes[m].active = active;
+    selected = m;
+  } else {
+    // No unfinished session: resume the mode the player progressed furthest in.
+    selected = PLUMBER_MODES.reduce((best, m) => (modes[m].maxLevel > modes[best].maxLevel ? m : best), 'child' as PlumberMode);
+  }
+  return { modes, stars: starsOut, fams: famsOut, selected };
 }
 
 /** Narrow a stored game slot to WaterSort (never throws, returns defaults). */
@@ -229,6 +379,21 @@ export function getPlumberSave(save: SaveData): PlumberSave {
     }
     if (!g.dailies || typeof g.dailies !== 'object') g.dailies = {};
     if (!g.fams || typeof g.fams !== 'object') g.fams = {};
+    if (!g.modes || typeof g.modes !== 'object' || !g.modes.child || !g.modes.normal || !g.modes.expert) {
+      const legacy: PlumberSave = { ...emptyPlumber(), ...g };
+      const derived = deriveModesFromLegacy(
+        Array.isArray(legacy.completed) ? legacy.completed : [],
+        legacy.stars ?? {},
+        legacy.fams ?? {},
+        legacy.active ?? null,
+      );
+      g.modes = derived.modes;
+      g.stars = derived.stars;
+      g.fams = derived.fams;
+      g.selected = derived.selected;
+    }
+    if (g.selected !== 'child' && g.selected !== 'expert' && g.selected !== 'normal') g.selected = 'child';
+    syncPlumberMirror(g);
     return g;
   }
   const fresh = emptyPlumber();
@@ -292,58 +457,43 @@ export function sanitizeSave(raw: unknown): SaveData | null {
     const p = (games as Record<string, unknown>)['plumber'];
     if (p && typeof p === 'object') {
       const po = p as Record<string, unknown>;
-      const maxLevel = typeof po.maxLevel === 'number' && Number.isFinite(po.maxLevel) ? Math.max(1, Math.floor(po.maxLevel)) : 1;
-      const completed = Array.isArray(po.completed)
-        ? [...new Set(po.completed.filter((n): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1))].sort((a, b) => a - b)
-        : [];
+      const stars = validStars(po.stars);
+      const fams = validFams(po.fams);
+      const legacyActive = parsePlumberActive(po.active);
+      const parsedModes = parseModes(po.modes);
+      let modes: Record<PlumberMode, PlumberModeProgress>;
+      let starsOut = stars;
+      let famsOut = fams;
+      const explicitSelected: PlumberMode | null = po.selected === 'child' || po.selected === 'expert' || po.selected === 'normal' ? po.selected : null;
+      let selected: PlumberMode = explicitSelected ?? 'child';
+      if (parsedModes) {
+        modes = parsedModes;
+        // Missing/legacy selection: resume the mode with the most progress.
+        if (!explicitSelected) selected = PLUMBER_MODES.reduce((best, m) => (parsedModes[m].maxLevel > parsedModes[best].maxLevel ? m : best), 'child' as PlumberMode);
+      } else {
+        // v1 -> v2 migration: distribute the single progression into modes,
+        // renumbering levels 1-based per mode (no progress loss).
+        const legacyCompleted = validCompleted(po.completed);
+        const derived = deriveModesFromLegacy(legacyCompleted, stars, fams, legacyActive);
+        modes = derived.modes;
+        starsOut = derived.stars;
+        famsOut = derived.fams;
+        selected = derived.selected;
+      }
       const slot: PlumberSave = {
-        maxLevel,
-        completed,
+        maxLevel: 1,
+        completed: [],
         active: null,
         tutorialSeen: po.tutorialSeen === true,
-        stars: validStars(po.stars),
+        stars: starsOut,
         collections: Array.isArray(po.collections) ? po.collections.filter((c): c is string => typeof c === 'string') : [],
         stats: validStats(po.stats),
         dailies: validDailies(po.dailies),
-        fams: validFams(po.fams),
+        fams: famsOut,
+        modes,
+        selected,
       };
-      if (po.active && typeof po.active === 'object') {
-        const a = po.active as Record<string, unknown>;
-        const numArr = (v: unknown): v is number[] => Array.isArray(v) && v.every((n) => typeof n === 'number');
-        const boolArr = (v: unknown, len: number): v is boolean[] => Array.isArray(v) && v.length === len && v.every((n) => typeof n === 'boolean');
-        const phases = ['PREPARING', 'RUNNING', 'PAUSED', 'WON', 'FAILED', 'STOPPED'];
-        if (
-          typeof a.levelNumber === 'number' && typeof a.puzzleId === 'string' && typeof a.seed === 'number' &&
-          (a.mode === 'child' || a.mode === 'normal' || a.mode === 'expert') &&
-          typeof a.gridW === 'number' && typeof a.gridH === 'number' &&
-          numArr(a.rots) && numArr(a.water) && Array.isArray(a.waterColor) &&
-          numArr(a.sourceLeft) && numArr(a.receiverGot) &&
-          typeof a.lost === 'number' && typeof a.tick === 'number' && typeof a.phase === 'string' && phases.includes(a.phase)
-        ) {
-          const cells = a.gridW * a.gridH;
-          const srcs = (a.sourceLeft as number[]).length;
-          if (a.rots.length === cells && a.water.length === cells && (a.waterColor as unknown[]).length === cells) {
-            if (isPlumberDef(a.def, a.gridW as number, a.gridH as number)) {
-              const full = a as unknown as PlumberSessionSave;
-              // New arrays default safely for pre-upgrade saves (subset compatible).
-              if (!boolArr(full.valves, cells)) full.valves = new Array<boolean>(cells).fill(true);
-              if (!Array.isArray(full.mixerStock)) full.mixerStock = Array.from({ length: cells }, () => []);
-              if (!numArr(full.distCount)) full.distCount = new Array<number>(cells).fill(0);
-              if (!boolArr(full.sourceEnabled, srcs)) full.sourceEnabled = new Array<boolean>(srcs).fill(true);
-              if (!numArr(full.receivedTotal)) full.receivedTotal = [...full.receiverGot];
-              if (typeof full.fedTotal !== 'number') full.fedTotal = 0;
-              if (!Array.isArray(full.inventoryLeft)) full.inventoryLeft = [];
-              if (!Array.isArray(full.program)) full.program = [];
-              if (!Array.isArray(full.cameFrom)) full.cameFrom = [];
-              if (typeof full.programCounter !== 'number') full.programCounter = 0;
-              if (typeof full.idleTicks !== 'number') full.idleTicks = 0;
-              if (typeof full.playerRotations !== 'number') full.playerRotations = 0;
-              if (typeof full.hintsUsed !== 'number') full.hintsUsed = 0;
-              slot.active = full;
-            }
-          }
-        }
-      }
+      syncPlumberMirror(slot);
       save.games['plumber'] = slot;
     }
   }
@@ -448,6 +598,23 @@ function mergePlumberProgress(merged: Record<string, unknown>, incR: Record<stri
     }
   }
   merged.fams = fams;
+  const curModes = (merged.modes as Record<PlumberMode, PlumberModeProgress> | undefined) ?? emptyPlumber().modes;
+  const incModes = incR.modes as Record<PlumberMode, PlumberModeProgress> | undefined;
+  if (incModes) {
+    const outModes = { child: emptyModeProgress(), normal: emptyModeProgress(), expert: emptyModeProgress() };
+    for (const m of PLUMBER_MODES) {
+      const a = curModes[m] ?? emptyModeProgress();
+      const b = incModes[m] ?? emptyModeProgress();
+      outModes[m] = {
+        maxLevel: Math.max(Number(a.maxLevel) || 1, Number(b.maxLevel) || 1),
+        completed: [...new Set([...a.completed, ...b.completed])].sort((x, y) => x - y),
+        // Conflicting actives are never mixed component-wise: keep current.
+        active: a.active,
+      };
+    }
+    merged.modes = outModes;
+  }
+  syncPlumberMirror(merged as unknown as PlumberSave);
 }
 
 export function mergeSaves(current: SaveData, incoming: SaveData): SaveData {
@@ -538,6 +705,23 @@ export function mergeServerSnapshot(save: SaveData, gameId: string, serverData: 
       local[m] = cur;
     }
     g.stats = local as PlumberSave['stats'];
+  }
+  if (gameId === 'plumber' && serverData.modes && typeof serverData.modes === 'object') {
+    const plumber = g as PlumberSave;
+    plumber.modes = plumber.modes ?? { child: emptyModeProgress(), normal: emptyModeProgress(), expert: emptyModeProgress() };
+    for (const m of PLUMBER_MODES) {
+      const srv = (serverData.modes as Record<string, unknown>)[m];
+      if (!srv || typeof srv !== 'object') continue;
+      const so = srv as Record<string, unknown>;
+      const local = plumber.modes[m] ?? emptyModeProgress();
+      const completed = new Set<number>([...local.completed, ...validCompleted(so.completed)]);
+      local.completed = [...completed].sort((a, b) => a - b);
+      if (typeof so.maxLevel === 'number' && Number.isFinite(so.maxLevel)) {
+        local.maxLevel = Math.max(Number(local.maxLevel) || 1, Math.floor(so.maxLevel));
+      }
+      plumber.modes[m] = local;
+    }
+    syncPlumberMirror(plumber);
   }
   save.games[gameId] = g as GameSave;
 }

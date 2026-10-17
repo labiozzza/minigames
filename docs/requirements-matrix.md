@@ -9,7 +9,7 @@
 | 3 | D | Вращение → размещение → перемещение/комбинации | 01 §1 | — | — | rotate/pickup/place | PASS |
 | 4 | D | От ошибок без штрафов к ресурсным/динамическим испытаниям | 01 §1 | — | — | dynamic+resource trials | PASS |
 | 5 | D | Бесконечная генерация уровней | 01 §1 | — | src/games/plumber/domain/ | tests/unit/plumber-domain.test.ts + tests/levels/plumber-mass.test.ts (1200/1200 WON, volume ok) | IN_PROGRESS |
-| 6 | D | Три режима сложности, адаптивность внутри каждого | 01 §1 | — | — | 3 modes adapt stats | PASS |
+| 6 | D | Три режима сложности, адаптивность внутри каждого | 01 §1 | — | — | 3 explicit, independent, selectable modes; per-mode store/migration (§5): tests/unit/plumber-save.test.ts (11), tests/e2e/modes.spec.ts (2), server per-mode (2) | PASS |
 | 7 | D | Последовательное усложнение условий победы | 01 §1 | — | — | receiver/teardown escalation | PASS |
 | 8 | D | Модульная сетка с препятствиями | 01 §- | — | — | blocked obstacles | PASS |
 | 9 | C | Источники/получатели: от краёв к внутреннему и множественному размещению | 01 §- | — | — | edge->multi/interior | PASS |
