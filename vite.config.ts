@@ -37,6 +37,9 @@ export default defineConfig(({ command }) => ({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,json}'],
+        // §15: real push handling lives in a separate script imported by the SW
+        // (no fake local notifications; delivery itself needs deployment creds).
+        importScripts: ['./push-sw.js'],
         // §13: game assets stay in the shell precache (offline-first) AND get
         // mirrored into a per-game versioned cache that can be freed on demand
         // without ever touching the IndexedDB save.

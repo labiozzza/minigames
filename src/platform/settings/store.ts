@@ -23,6 +23,12 @@ export interface Settings {
   noDrag: boolean;
   /** §12 graphics: auto-degrade on measured FPS drop, or pinned by the user. */
   quality: Quality;
+  /** §15 privacy: optional gameplay analytics (off until the user opts in). */
+  analyticsConsent: boolean;
+  /** §15 notifications: separate opt-ins from analytics; time is local hours 0-23. */
+  pushDaily: boolean;
+  pushWeekly: boolean;
+  pushHour: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -42,6 +48,10 @@ export const DEFAULT_SETTINGS: Settings = {
   flashFree: false,
   noDrag: false,
   quality: 'auto',
+  analyticsConsent: false,
+  pushDaily: false,
+  pushWeekly: false,
+  pushHour: 9,
 };
 
 export function sanitizeSettings(raw: unknown): Settings {
@@ -67,6 +77,10 @@ export function sanitizeSettings(raw: unknown): Settings {
     flashFree: o.flashFree === true,
     noDrag: o.noDrag === true,
     quality,
+    analyticsConsent: o.analyticsConsent === true,
+    pushDaily: o.pushDaily === true,
+    pushWeekly: o.pushWeekly === true,
+    pushHour: typeof o.pushHour === 'number' && Number.isInteger(o.pushHour) && o.pushHour >= 0 && o.pushHour <= 23 ? o.pushHour : 9,
   };
 }
 

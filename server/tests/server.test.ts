@@ -19,6 +19,7 @@ async function api(path: string, init?: RequestInit): Promise<{ status: number; 
 }
 
 const AUTH = (t: string) => ({ Authorization: `Bearer ${t}` });
+let ipCounter = 0;
 
 beforeAll(async () => {
   const app = createApp({ store: new MemoryStore(), exposeCodes: true, cors: '*' });
@@ -34,7 +35,10 @@ afterAll(async () => {
 });
 
 async function login(email: string): Promise<string> {
-  const q = await api('/auth/otp/request', { method: 'POST', body: JSON.stringify({ email }) });
+  // Distinct client IP per login so the per-IP telemetry/auth guard (which is
+  // intentionally active in tests too) never masks the per-email window test.
+  ipCounter += 1;
+  const q = await api('/auth/otp/request', { method: 'POST', headers: { 'x-forwarded-for': `10.1.0.${ipCounter}` }, body: JSON.stringify({ email }) });
   expect(q.status).toBe(200);
   const code = auth.lastCodeFor(email);
   expect(code).toBeDefined();
@@ -263,6 +267,12 @@ describe('config, admin, telemetry', () => {
     expect(no.body.ok).toBe(false);
     const bare = await api('/telemetry', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ consent: true, events: [{ type: 'level_win' }] }) });
     expect(bare.body.ok).toBe(false);
+    // Consent for a different scope (e.g. only notifications) does not unlock analytics.
+    const wrongScope = await api('/telemetry', {
+      method: 'POST', headers: AUTH(token),
+      body: JSON.stringify({ consent: { granted: true, version: '1', scope: 'notifications' }, events: [{ type: 'level_win' }] }),
+    });
+    expect(wrongScope.body.ok).toBe(false);
     const yes = await api('/telemetry', {
       method: 'POST', headers: AUTH(token),
       body: JSON.stringify({
@@ -273,7 +283,74 @@ describe('config, admin, telemetry', () => {
         ],
       }),
     });
-    expect(yes.body).toEqual({ ok: true, accepted: 1 });
+    expect(yes.body).toEqual({ ok: true, accepted: 1, analytics: 1, diag: 0 });
+    // Diagnostics are accepted without consent, analytics are not, and child
+    // mode keeps only the child-safe analytics subset.
+    const mixed = await api('/telemetry', {
+      method: 'POST', headers: AUTH(token),
+      body: JSON.stringify({
+        childMode: true,
+        events: [
+          { type: 'perf_sample', channel: 'diag', fps: 60, ms: 16 },
+          { type: 'level_win', level: 9 },
+        ],
+      }),
+    });
+    expect(mixed.body).toMatchObject({ ok: false, reason: 'no-consent' });
+    const diagOnly = await api('/telemetry', {
+      method: 'POST', headers: AUTH(token),
+      body: JSON.stringify({ events: [{ type: 'perf_sample', channel: 'diag', fps: 60, ms: 16 }] }),
+    });
+    expect(diagOnly.body).toMatchObject({ ok: true, diag: 1, analytics: 0 });
+    const child = await api('/telemetry', {
+      method: 'POST', headers: AUTH(token),
+      body: JSON.stringify({
+        childMode: true,
+        consent: { granted: true, version: '1', scope: 'analytics' },
+        events: [
+          { type: 'game_open', gameId: 'plumber' },
+          { type: 'level_win', level: 9 },
+        ],
+      }),
+    });
+    expect(child.body).toMatchObject({ ok: true, analytics: 1, accepted: 1 });
+  });
+  it('data rights: export then erase; admin report is aggregated and PII-free', async () => {
+    const token = await login('rights@example.com');
+    const consent = { granted: true, version: '1', scope: 'analytics' };
+    await api('/telemetry', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ consent, events: [{ type: 'level_win', email: 'secret@x.y' }] }) });
+    await api('/telemetry', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ events: [{ type: 'perf_sample', channel: 'diag', fps: 55 }] }) });
+    const exp = await api('/me/export', { headers: AUTH(token) });
+    expect(exp.status).toBe(200);
+    const data = exp.body.export as { diagnostics: Array<Record<string, unknown>>; retentionDays: number };
+    expect(data.retentionDays).toBe(180);
+    expect(data.diagnostics.length).toBe(1); // only the account-tied diagnostic
+    expect(JSON.stringify(data)).not.toContain('secret@x.y');
+    // Push subscriptions: structure validated, delivery honestly pending.
+    const badSub = await api('/push/subscribe', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ subscription: { endpoint: 'http://insecure' } }) });
+    expect(badSub.status).toBe(400);
+    const sub = await api('/push/subscribe', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ subscription: { endpoint: 'https://push.example/abc', keys: { p256dh: 'k', auth: 'a' } } }) });
+    expect(sub.body).toMatchObject({ ok: true, count: 1, delivery: 'pending-deployment' });
+    const un = await api('/push/unsubscribe', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ endpoint: 'https://push.example/abc' }) });
+    expect(un.body).toMatchObject({ ok: true, removed: true });
+    const er = await api('/me/erase', { method: 'POST', headers: AUTH(token) });
+    expect(er.body.ok).toBe(true);
+    // Erasure removes sessions too, so the same token is now invalid (expected).
+    const stale = await api('/me/export', { headers: AUTH(token) });
+    expect(stale.status).toBe(401);
+    const token2 = await login('rights@example.com');
+    const after = await api('/me/export', { headers: AUTH(token2) });
+    expect((after.body.export as { diagnostics: unknown[] }).diagnostics.length).toBe(0);
+    // Aggregated report (admin) has counts only.
+    await store.upsertUser({ id: 'admin-2', email: 'admin2@example.com', role: 'admin', createdAt: Date.now() });
+    const adminToken = 'admintoken456';
+    await store.putSession({ tokenHash: hashSecret(adminToken), userId: 'admin-2', role: 'admin', expiresAt: Date.now() + 3600000 });
+    const rep = await api('/admin/reports', { headers: AUTH(adminToken) });
+    expect(rep.status).toBe(200);
+    const json = JSON.stringify(rep.body);
+    expect(json).not.toContain('secret@x.y');
+    expect(json).not.toContain('@example.com');
+    expect((rep.body.reports as { telemetry: unknown[] }).telemetry.length).toBeGreaterThan(0);
   });
   it('sessions are hashed at rest and reject expired tokens', async () => {
     const token = await login('exp@example.com');
@@ -357,7 +434,8 @@ describe('sync: idempotency, stats merge, CORS, test-only OTP', () => {
   });
 
   it('exposes the OTP code only in test configuration', async () => {
-    const r = await api('/auth/otp/request', { method: 'POST', body: JSON.stringify({ email: 'reveal@example.com' }) });
+    // Fresh IP so the earlier rate-limit test's exhausted bucket does not apply.
+    const r = await api('/auth/otp/request', { method: 'POST', headers: { 'x-forwarded-for': '198.51.100.7' }, body: JSON.stringify({ email: 'reveal@example.com' }) });
     expect(typeof r.body.code).toBe('string');
     expect((r.body.code as string).length).toBe(6);
   });

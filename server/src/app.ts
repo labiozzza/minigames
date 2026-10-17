@@ -7,7 +7,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { randomBytes } from 'node:crypto';
 import { MemoryStore, type Store } from './store';
 import { AuthService } from './auth';
-import { cleanTelemetry, validConsent, validateShareDef, validateSyncEvents } from './validate';
+import { cleanTelemetry, consentFor, validConsent, validPushSubscription, validateShareDef, validateSyncEvents } from './validate';
 import { changedFields, checksumConfig, defaultConfig, validateConfig } from './config-schema';
 import { certifySeeds, defaultSeeds } from './certify';
 
@@ -300,15 +300,51 @@ export function createApp(opts: ServerOptions = {}): { server: Server; auth: Aut
         if (method === 'GET' && url.pathname === '/admin/audit') {
           return send(res, 200, { audit: await store.getAudit(100) });
         }
+        if (method === 'GET' && url.pathname === '/admin/reports') {
+          // Aggregated, PII-free report: counts only, never emails/tokens/events.
+          return send(res, 200, { reports: { telemetry: await store.telemetrySummary(), retentionDays: 180 } });
+        }
       }
 
-      // ---------- telemetry (versioned consent + strict allowlist) ----------
+      // ---------- telemetry (two channels: diag needs no consent, analytics does) ----------
       if (method === 'POST' && url.pathname === '/telemetry') {
-        if (!validConsent(b.consent)) return send(res, 200, { ok: false, reason: 'no-consent' });
-        const clean = cleanTelemetry(b.events);
-        if (clean.length === 0) return send(res, 200, { ok: true, accepted: 0 });
-        await store.putTelemetry(ctx.userId, clean as unknown as Array<Record<string, unknown>>, now());
-        return send(res, 200, { ok: true, accepted: clean.length });
+        const raw = Array.isArray(b.events) ? (b.events as Array<Record<string, unknown>>) : [];
+        const childMode = b.childMode === true;
+        const consent = validConsent(b.consent) && consentFor(b.consent, 'analytics');
+        const wantsAnalytics = raw.some((e) => (e?.channel ?? 'analytics') === 'analytics');
+        if (wantsAnalytics && !consent) return send(res, 200, { ok: false, reason: 'no-consent', accepted: 0, analytics: 0, diag: 0 });
+        const clean = cleanTelemetry(b.events, { consent, childMode });
+        const analytics = clean.filter((e) => e.channel === 'analytics');
+        const diag = clean.filter((e) => e.channel === 'diag');
+        // Analytics is stored anonymised (no user id); diagnostics stay tied to
+        // the account so the player can export/erase them.
+        if (analytics.length) await store.putTelemetry(null, analytics as unknown as Array<Record<string, unknown>>, now());
+        if (diag.length) await store.putTelemetry(ctx.userId, diag as unknown as Array<Record<string, unknown>>, now());
+        return send(res, 200, { ok: true, accepted: clean.length, analytics: analytics.length, diag: diag.length });
+      }
+
+      // ---------- push subscriptions (structure only; live delivery BLOCKED_EXTERNAL) ----------
+      if (method === 'POST' && url.pathname === '/push/subscribe') {
+        if (!validPushSubscription(b.subscription)) return send(res, 400, { error: 'bad-subscription' });
+        await store.pushSubscribe(ctx.userId, b.subscription as unknown as Record<string, unknown>);
+        return send(res, 200, { ok: true, count: (await store.pushSubscriptions(ctx.userId)).length, delivery: 'pending-deployment' });
+      }
+      if (method === 'POST' && url.pathname === '/push/unsubscribe') {
+        if (typeof b.endpoint !== 'string') return send(res, 400, { error: 'bad-endpoint' });
+        const removed = await store.pushUnsubscribe(ctx.userId, b.endpoint);
+        return send(res, 200, { ok: true, removed });
+      }
+      if (method === 'GET' && url.pathname === '/push/status') {
+        return send(res, 200, { subscriptions: (await store.pushSubscriptions(ctx.userId)).length });
+      }
+
+      // ---------- data rights (export / erase) ----------
+      if (method === 'GET' && url.pathname === '/me/export') {
+        return send(res, 200, { export: await store.exportUserData(ctx.userId) });
+      }
+      if (method === 'POST' && url.pathname === '/me/erase') {
+        const erased = await store.eraseUserData(ctx.userId);
+        return send(res, 200, { ok: true, erased });
       }
 
       return send(res, 404, { error: 'not-found' });

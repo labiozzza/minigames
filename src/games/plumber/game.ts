@@ -30,6 +30,7 @@ import { computeStars, familyForMode, parseShareCode, shareCode, unlockedCollect
 import { archiveEntries, CHALLENGE_HORIZON_DAYS, currentDaily, currentWeekly, resolveChallenge, weekStartUTC } from './domain/challenges';
 import { projectSvg, themeComposition } from './presentation/diorama';
 import { PLUMBER_ID } from './index';
+import { recordAnalytics } from '../../platform/telemetry';
 import { PlumberScene } from './presentation/scene';
 import { mechanicsOf, nextGuide, pendingMechanic, type GuideStep, type Mechanic } from './tutorial/logic';
 
@@ -181,6 +182,7 @@ export class PlumberGame implements GameHandle {
       this.undoStack = [];
       this.redoStack = [];
       this.refreshChrome();
+      this.recordLevelStart();
       return;
     }
     // Short share code: deterministic definition for that (mode, level). Kept
@@ -196,6 +198,7 @@ export class PlumberGame implements GameHandle {
       this.undoStack = [];
       this.redoStack = [];
       this.refreshChrome();
+      this.recordLevelStart();
       return;
     }
     // Daily/weekly challenge: identical for everyone (deterministic spec).
@@ -212,6 +215,7 @@ export class PlumberGame implements GameHandle {
         this.undoStack = [];
         this.redoStack = [];
         this.refreshChrome();
+        this.recordLevelStart();
         return;
       }
     }
@@ -249,6 +253,7 @@ export class PlumberGame implements GameHandle {
         });
         this.state.log = [];
         this.refreshChrome();
+        this.recordLevelStart();
         return;
       }
     }
@@ -257,6 +262,12 @@ export class PlumberGame implements GameHandle {
     this.undoStack = [];
     this.redoStack = [];
     this.refreshChrome();
+    this.recordLevelStart();
+  }
+
+  /** §15 analytics: emitted only when the player opted in (no-op otherwise). */
+  private recordLevelStart(): void {
+    recordAnalytics(this.ctx.settings, { type: 'level_start', gameId: PLUMBER_ID, mode: this.mode, level: this.level });
   }
 
   /**
@@ -684,6 +695,7 @@ export class PlumberGame implements GameHandle {
   private onWin(): void {
     this.stopTicker();
     this.audio.win();
+    recordAnalytics(this.ctx.settings, { type: 'level_win', gameId: PLUMBER_ID, mode: this.def.mode, level: this.level });
     if (this.ctx.settings.vibration) vibrate([40, 60, 40]);
     const slot = this.slot;
     const mode = this.def.mode;
@@ -750,6 +762,7 @@ export class PlumberGame implements GameHandle {
   private onFailed(): void {
     this.stopTicker();
     this.audio.error();
+    recordAnalytics(this.ctx.settings, { type: 'level_fail', gameId: PLUMBER_ID, mode: this.def.mode, level: this.level });
     if (this.ctx.settings.vibration) vibrate(30);
     this.bannerEl.textContent = this.ctx.t('plumber.failed') + (this.state.leakCell !== null ? ` (#${this.state.leakCell})` : '');
     this.bannerEl.hidden = false;

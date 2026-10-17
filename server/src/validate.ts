@@ -132,30 +132,55 @@ export function validateShareDef(def: unknown): boolean {
 }
 
 // Telemetry: allowlist, not denylist. Only these event types and fields pass.
-const TELEMETRY_EVENTS = new Set([
+// §15: two channels — `diag` (mandatory minimal technical diagnostics, no PII,
+// allowed without consent) and `analytics` (optional gameplay analytics, only
+// with explicit consent). Child mode gets a stricter analytics subset.
+export const TELEMETRY_EVENTS = new Set([
   'app_open', 'game_open', 'level_start', 'level_win', 'level_fail',
   'hint_used', 'settings_change', 'sync_ok', 'sync_fail', 'perf_sample',
 ]);
-const TELEMETRY_FIELDS = new Set([
-  'type', 'gameId', 'mode', 'level', 'stars', 'ms', 'fps', 'reason', 'setting', 'value', 'count',
+export const TELEMETRY_FIELDS = new Set([
+  'type', 'channel', 'gameId', 'mode', 'level', 'stars', 'ms', 'fps', 'reason', 'setting', 'value', 'count',
 ]);
+/** Minimal technical diagnostics: allowed without consent, never PII. */
+export const DIAG_EVENTS = new Set(['perf_sample', 'sync_ok', 'sync_fail']);
+export const DIAG_FIELDS = new Set(['type', 'channel', 'gameId', 'ms', 'fps', 'count', 'reason']);
+/** Analytics event types permitted in child mode (stricter by default). */
+export const CHILD_ANALYTICS_EVENTS = new Set(['app_open', 'game_open', 'level_start']);
+export const TELEMETRY_RETENTION_DAYS = 180;
 
 export interface CleanEvent {
   type: string;
+  channel: 'diag' | 'analytics';
   [k: string]: string | number | boolean;
 }
 
-/** Drop any event/field outside the allowlist. Returns accepted events. */
-export function cleanTelemetry(list: unknown): CleanEvent[] {
+const CHANNELS = new Set(['diag', 'analytics']);
+
+/**
+ * Drop any event/field outside the allowlist. Diagnostics do not require
+ * consent; analytics require a valid consent object and, in child mode, must
+ * be from the stricter child-safe subset. Nested objects/arrays are dropped.
+ */
+export function cleanTelemetry(list: unknown, opts: { consent: boolean; childMode?: boolean } = { consent: false }): CleanEvent[] {
   if (!Array.isArray(list)) return [];
   const out: CleanEvent[] = [];
   for (const e of list.slice(0, 100)) {
     if (!e || typeof e !== 'object') continue;
     const r = e as Record<string, unknown>;
     if (!isStr(r.type, 32) || !TELEMETRY_EVENTS.has(r.type)) continue;
-    const clean: CleanEvent = { type: r.type };
+    const channel = r.channel === 'diag' ? 'diag' : r.channel === 'analytics' ? 'analytics' : 'analytics';
+    if (!CHANNELS.has(channel)) continue;
+    if (channel === 'diag') {
+      if (!DIAG_EVENTS.has(r.type)) continue;
+    } else {
+      if (!opts.consent) continue;
+      if (opts.childMode && !CHILD_ANALYTICS_EVENTS.has(r.type)) continue;
+    }
+    const allowed = channel === 'diag' ? DIAG_FIELDS : TELEMETRY_FIELDS;
+    const clean: CleanEvent = { type: r.type, channel };
     for (const [k, v] of Object.entries(r)) {
-      if (k === 'type' || !TELEMETRY_FIELDS.has(k)) continue;
+      if (k === 'type' || k === 'channel' || !allowed.has(k)) continue;
       if (typeof v === 'string' && v.length <= 64) clean[k] = v;
       else if (typeof v === 'number' && Number.isFinite(v)) clean[k] = v;
       else if (typeof v === 'boolean') clean[k] = v;
@@ -165,9 +190,33 @@ export function cleanTelemetry(list: unknown): CleanEvent[] {
   return out;
 }
 
+export interface PushSubscriptionLike {
+  endpoint: string;
+  keys?: { p256dh: string; auth: string };
+}
+
+/** Structural validation for a stored push subscription (no live delivery here). */
+export function validPushSubscription(v: unknown): v is PushSubscriptionLike {
+  if (!v || typeof v !== 'object') return false;
+  const s = v as Record<string, unknown>;
+  if (typeof s.endpoint !== 'string' || s.endpoint.length < 8 || s.endpoint.length > 1024) return false;
+  if (!s.endpoint.startsWith('https://')) return false;
+  if (s.keys === undefined) return true;
+  if (!s.keys || typeof s.keys !== 'object') return false;
+  const k = s.keys as Record<string, unknown>;
+  return typeof k.p256dh === 'string' && typeof k.auth === 'string';
+}
+
 /** Versioned consent object (not a bare boolean). */
 export function validConsent(v: unknown): boolean {
   if (!v || typeof v !== 'object') return false;
   const c = v as Record<string, unknown>;
   return c.granted === true && isStr(c.version, 16) && isStr(c.scope, 32);
+}
+
+/** Per-channel consent: analytics and notifications are independent opt-ins. */
+export function consentFor(v: unknown, scope: string): boolean {
+  if (!validConsent(v)) return false;
+  const c = v as Record<string, unknown>;
+  return c.scope === scope;
 }

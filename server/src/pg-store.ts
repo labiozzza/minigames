@@ -310,7 +310,58 @@ export class PgStore implements Store {
     const r = await this.pool.query('SELECT ts, actor, action, game, detail FROM audit ORDER BY id DESC LIMIT $1', [limit]);
     return r.rows.map((x) => ({ ts: Number(x.ts), by: x.actor, action: x.action, game: x.game, ...(x.detail ?? {}) }));
   }
-  async putTelemetry(userId: string, events: Array<Record<string, unknown>>, ts: number): Promise<void> {
+  async putTelemetry(userId: string | null, events: Array<Record<string, unknown>>, ts: number): Promise<void> {
     await this.pool.query('INSERT INTO telemetry(user_id, ts, events) VALUES($1,$2,$3)', [userId, ts, JSON.stringify(events)]);
+  }
+  async telemetrySummary(): Promise<Array<{ channel: string; type: string; count: number }>> {
+    const r = await this.pool.query(
+      `SELECT COALESCE(e->>'channel','analytics') AS channel, e->>'type' AS type, COUNT(*)::int AS count
+       FROM telemetry t, jsonb_array_elements(t.events) e
+       GROUP BY 1, 2 ORDER BY 1, 2`,
+    );
+    return r.rows.map((x) => ({ channel: x.channel, type: x.type, count: Number(x.count) }));
+  }
+  async pushSubscribe(userId: string, sub: Record<string, unknown>): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO push_subscriptions(user_id, endpoint, sub) VALUES($1,$2,$3)
+       ON CONFLICT (endpoint) DO UPDATE SET user_id=EXCLUDED.user_id, sub=EXCLUDED.sub`,
+      [userId, String(sub.endpoint), JSON.stringify(sub)],
+    );
+  }
+  async pushUnsubscribe(userId: string, endpoint: string): Promise<boolean> {
+    const r = await this.pool.query('DELETE FROM push_subscriptions WHERE user_id=$1 AND endpoint=$2', [userId, endpoint]);
+    return (r.rowCount ?? 0) > 0;
+  }
+  async pushSubscriptions(userId: string): Promise<Array<Record<string, unknown>>> {
+    const r = await this.pool.query('SELECT sub FROM push_subscriptions WHERE user_id=$1', [userId]);
+    return r.rows.map((x) => x.sub);
+  }
+  async eraseUserData(userId: string): Promise<Record<string, number>> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const saves = await client.query('DELETE FROM saves WHERE user_id=$1', [userId]);
+      const tele = await client.query('DELETE FROM telemetry WHERE user_id=$1', [userId]);
+      const ses = await client.query('DELETE FROM sessions WHERE user_id=$1', [userId]);
+      const push = await client.query('DELETE FROM push_subscriptions WHERE user_id=$1', [userId]);
+      await client.query('DELETE FROM seen_events WHERE user_id=$1', [userId]);
+      await client.query('COMMIT');
+      return { saves: saves.rowCount ?? 0, telemetry: tele.rowCount ?? 0, sessions: ses.rowCount ?? 0, push: push.rowCount ?? 0, shares: 0 };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+  async exportUserData(userId: string): Promise<Record<string, unknown>> {
+    const saves = await this.pool.query('SELECT game_id, data FROM saves WHERE user_id=$1', [userId]);
+    const diag = await this.pool.query('SELECT ts, events FROM telemetry WHERE user_id=$1 ORDER BY ts ASC', [userId]);
+    const push = await this.pool.query('SELECT endpoint FROM push_subscriptions WHERE user_id=$1', [userId]);
+    const out: Record<string, unknown> = {};
+    for (const r of saves.rows) out[r.game_id] = r.data;
+    const diagnostics: Array<Record<string, unknown>> = [];
+    for (const r of diag.rows) for (const e of (r.events as Array<Record<string, unknown>>) ?? []) diagnostics.push({ ts: Number(r.ts), ...e });
+    return { saves: out, diagnostics, pushSubscriptions: push.rowCount ?? 0, retentionDays: 180 };
   }
 }

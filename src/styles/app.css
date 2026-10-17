@@ -166,7 +166,9 @@ button { font: inherit; color: inherit; }
 .level-cell.locked { opacity: .35; cursor: default; }
 
 /* Settings */
-.settings-form { display: flex; flex-direction: column; gap: 10px; }
+.settings-form, .settings-privacy { display: flex; flex-direction: column; gap: 10px; }
+.settings-privacy { margin-top: 6px; border-top: 1px solid rgba(127,127,127,.25); padding-top: 12px; }
+.setting-hint { margin: 0; font-size: 13px; opacity: .72; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 15px; }
 .setting-row select, .setting-row input[type='range'] { max-width: 180px; }
 .setting-row input[type='checkbox'] { width: 24px; height: 24px; }

@@ -91,8 +91,17 @@ export interface Store {
   rollbackConfig(gameId: string, by: string, ts: number): Promise<number | null>;
   getHistory(gameId: string): Promise<ConfigRec[]>;
   getAudit(limit: number): Promise<Array<Record<string, unknown>>>;
-  // telemetry
-  putTelemetry(userId: string, events: Array<Record<string, unknown>>, ts: number): Promise<void>;
+  // telemetry (diag may be anonymous; analytics stored without user id)
+  putTelemetry(userId: string | null, events: Array<Record<string, unknown>>, ts: number): Promise<void>;
+  /** Aggregated, PII-free report: counts per (channel, type). */
+  telemetrySummary(): Promise<Array<{ channel: string; type: string; count: number }>>;
+  // push subscriptions (structure only; live delivery needs deployment creds)
+  pushSubscribe(userId: string, sub: Record<string, unknown>): Promise<void>;
+  pushUnsubscribe(userId: string, endpoint: string): Promise<boolean>;
+  pushSubscriptions(userId: string): Promise<Array<Record<string, unknown>>>;
+  // data rights
+  eraseUserData(userId: string): Promise<Record<string, number>>;
+  exportUserData(userId: string): Promise<Record<string, unknown>>;
 }
 
 function blankStats(): Record<string, { attempts: number; wins: number; hints: number; skips: number }> {
@@ -170,6 +179,7 @@ export class MemoryStore implements Store {
   private history = new Map<string, ConfigRec[]>();
   private audit: Array<Record<string, unknown>> = [];
   private telemetry: Array<Record<string, unknown>> = [];
+  private push = new Map<string, Array<Record<string, unknown>>>();
 
   async getUser(id: string): Promise<UserRec | null> { return this.users.get(id) ?? null; }
   async upsertUser(u: UserRec): Promise<void> {
@@ -270,17 +280,68 @@ export class MemoryStore implements Store {
   }
   async getHistory(gameId: string): Promise<ConfigRec[]> { return [...(this.history.get(gameId) ?? [])]; }
   async getAudit(limit: number) { return this.audit.slice(-limit); }
-  async putTelemetry(userId: string, events: Array<Record<string, unknown>>, ts: number): Promise<void> {
-    this.telemetry.push({ userId, ts, events });
+  async putTelemetry(userId: string | null, events: Array<Record<string, unknown>>, ts: number): Promise<void> {
+    this.telemetry.push({ userId, ts, events: JSON.parse(JSON.stringify(events)) });
+  }
+  async telemetrySummary(): Promise<Array<{ channel: string; type: string; count: number }>> {
+    const map = new Map<string, { channel: string; type: string; count: number }>();
+    for (const rec of this.telemetry) {
+      for (const e of (rec.events as Array<Record<string, unknown>>) ?? []) {
+        const channel = typeof e.channel === 'string' ? e.channel : 'analytics';
+        const type = String(e.type);
+        const k = `${channel}:${type}`;
+        const cur = map.get(k) ?? { channel, type, count: 0 };
+        cur.count += 1;
+        map.set(k, cur);
+      }
+    }
+    return [...map.values()].sort((a, b) => (a.channel === b.channel ? a.type.localeCompare(b.type) : a.channel.localeCompare(b.channel)));
+  }
+  async pushSubscribe(userId: string, sub: Record<string, unknown>): Promise<void> {
+    const list = this.push.get(userId) ?? [];
+    const endpoint = String(sub.endpoint);
+    this.push.set(userId, [...list.filter((s) => s.endpoint !== endpoint), JSON.parse(JSON.stringify(sub))]);
+  }
+  async pushUnsubscribe(userId: string, endpoint: string): Promise<boolean> {
+    const list = this.push.get(userId) ?? [];
+    const next = list.filter((s) => s.endpoint !== endpoint);
+    this.push.set(userId, next);
+    return next.length !== list.length;
+  }
+  async pushSubscriptions(userId: string): Promise<Array<Record<string, unknown>>> {
+    return (this.push.get(userId) ?? []).map((s) => ({ ...s }));
+  }
+  async eraseUserData(userId: string): Promise<Record<string, number>> {
+    let saves = 0;
+    let telemetry = 0;
+    let sessions = 0;
+    for (const k of [...this.saves.keys()]) if (k.startsWith(`${userId}:`)) { this.saves.delete(k); saves += 1; }
+    this.telemetry = this.telemetry.filter((r) => {
+      if (r.userId === userId) { telemetry += 1; return false; }
+      return true;
+    });
+    for (const [h, s] of [...this.sessions.entries()]) if (s.userId === userId) { this.sessions.delete(h); sessions += 1; }
+    const push = (this.push.get(userId) ?? []).length;
+    this.push.delete(userId);
+    const shares = 0; // shares are content, not user data; owned rows are anonymised
+    return { saves, telemetry, sessions, push, shares };
+  }
+  async exportUserData(userId: string): Promise<Record<string, unknown>> {
+    const saves: Record<string, unknown> = {};
+    for (const [k, v] of this.saves.entries()) if (k.startsWith(`${userId}:`)) saves[k.slice(userId.length + 1)] = v.data;
+    const diag: Array<Record<string, unknown>> = [];
+    for (const r of this.telemetry) if (r.userId === userId) for (const e of (r.events as Array<Record<string, unknown>>) ?? []) diag.push({ ts: r.ts, ...e });
+    return { saves, diagnostics: diag, pushSubscriptions: (this.push.get(userId) ?? []).length, retentionDays: 180 };
   }
 }
 
 /** File-backed store for local preview (atomic writes, JSON). Not for production. */
-const FILE_MAP_FIELDS = ['users', 'byEmail', 'sessions', 'otps', 'otpLog', 'saves', 'shares', 'configs', 'drafts', 'history'] as const;
+const FILE_MAP_FIELDS = ['users', 'byEmail', 'sessions', 'otps', 'otpLog', 'saves', 'shares', 'configs', 'drafts', 'history', 'push'] as const;
 const FILE_ARRAY_FIELDS = ['audit', 'telemetry'] as const;
 const FILE_MUTATORS = new Set<string>([
   'upsertUser', 'linkGuest', 'putSession', 'putOtp', 'delOtp', 'pushOtpRequest',
   'putSave', 'putShare', 'putDraft', 'publishConfig', 'rollbackConfig', 'putTelemetry',
+  'pushSubscribe', 'pushUnsubscribe', 'eraseUserData',
 ]);
 
 export class FileStore extends MemoryStore {

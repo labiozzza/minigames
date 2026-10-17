@@ -154,6 +154,20 @@ export class SyncEngine implements ProgressSink {
     this.refreshStatus();
   }
 
+  /** §15 data rights: full server-side export of the signed-in user's data. */
+  async exportData(): Promise<Record<string, unknown>> {
+    const r = await this.client.exportData();
+    return r.export;
+  }
+
+  /** §15 data rights: irreversible erasure; the server also drops sessions. */
+  async eraseData(): Promise<{ ok: boolean; erased: Record<string, number> }> {
+    const r = await this.client.eraseData();
+    setToken(null);
+    this.refreshStatus();
+    return r;
+  }
+
   async me(): Promise<{ id: string; email?: string } | null> {
     if (!isSignedIn()) return null;
     try {

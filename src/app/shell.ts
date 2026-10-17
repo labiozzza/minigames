@@ -19,6 +19,8 @@ import { deleteGameCache, gameOfflineStatus, precacheGame } from '../platform/pw
 import { SyncEngine } from '../platform/sync/engine';
 import { getStatus, subscribeStatus, type SyncStatus } from '../platform/sync/status';
 import { isSignedIn, getGuestId } from '../platform/auth/session';
+import { clearTelemetryQueue, flushTelemetry, recordAnalytics } from '../platform/telemetry';
+import { disableNotifications, enableNotifications, pushState } from '../platform/notifications';
 
 const A11Y_ALL = ['a11y-contrast', 'a11y-large', 'a11y-reduce-motion', 'a11y-flash-free'];
 
@@ -62,6 +64,12 @@ export class Shell {
     this.bindEvents();
     this.renderCatalog();
     this.checkUpdateBanner();
+    // §15: emit the app-open analytics only if consent is already on, then flush
+    // on hide so a session's events leave the device promptly.
+    recordAnalytics(this.settings, { type: 'app_open' });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') void flushTelemetry(this.settings);
+    });
   }
 
   private applyTheme(): void {
@@ -256,6 +264,7 @@ export class Shell {
     };
     try {
       this.game = await mod.mount(ctx);
+      recordAnalytics(this.settings, { type: 'game_open', gameId, mode });
     } catch (err) {
       console.error(`[shell] mount failed for ${gameId}:`, err);
       this.game = null;
@@ -487,6 +496,80 @@ export class Shell {
     );
     box.appendChild(form);
 
+    // §15 privacy: consent, notifications, data rights.
+    const privacy = el('div', 'settings-privacy');
+    privacy.append(el('h3', '', this.t('settings.privacy')));
+    privacy.append(
+      row(this.t('settings.analytics'), toggle(s.analyticsConsent, (v) => {
+        s.analyticsConsent = v;
+        void this.persist();
+        if (v) recordAnalytics(s, { type: 'app_open' });
+        else clearTelemetryQueue();
+      })),
+    );
+    privacy.append(el('p', 'setting-hint', this.t('settings.analyticsHint')));
+    privacy.append(el('p', 'setting-hint', this.t('settings.retention')));
+
+    const dataRow = el('div', 'modal-row');
+    const exportBtn = button(this.t('settings.exportData'), 'btn', () => void this.exportAccountData(), this.t('settings.exportData'));
+    const eraseBtn = button(this.t('settings.eraseData'), 'btn danger', () => void this.eraseAccountData(), this.t('settings.eraseData'));
+    const signedIn = isSignedIn();
+    exportBtn.disabled = !signedIn;
+    eraseBtn.disabled = !signedIn;
+    dataRow.append(exportBtn, eraseBtn);
+    privacy.append(dataRow);
+    if (!signedIn) privacy.append(el('p', 'setting-hint', this.t('settings.loginNeeded')));
+
+    privacy.append(el('h3', '', this.t('settings.notifications')));
+    const notifStatus = el('p', 'setting-hint', '');
+    const notifRow = el('div', 'modal-row');
+    let enabled = false;
+    const notifBtn = button(this.t('settings.notifEnable'), 'btn', () => {
+      void (async () => {
+        if (enabled) {
+          await disableNotifications();
+          enabled = false;
+          notifBtn.textContent = this.t('settings.notifEnable');
+        } else {
+          const r = await enableNotifications();
+          if (!r.ok) {
+            toast(this.toastRoot, this.t(r.reason === 'permission-denied' ? 'settings.notifDenied' : 'settings.notifUnsupported'));
+            return;
+          }
+          enabled = true;
+          notifBtn.textContent = this.t('settings.notifDisable');
+          toast(this.toastRoot, this.t(r.reason === 'no-vapid' ? 'settings.notifPending' : 'settings.notifOn'));
+        }
+        void refreshNotifStatus();
+      })();
+    }, this.t('settings.notifEnable'));
+    notifRow.append(notifBtn);
+    privacy.append(notifRow);
+    privacy.append(notifStatus);
+    privacy.append(
+      row(this.t('settings.notifDaily'), toggle(s.pushDaily, (v) => { s.pushDaily = v; void this.persist(); })),
+      row(this.t('settings.notifWeekly'), toggle(s.pushWeekly, (v) => { s.pushWeekly = v; void this.persist(); })),
+      row(this.t('settings.notifTime'), sel(
+        Array.from({ length: 24 }, (_, h) => [`${h}`, `${String(h).padStart(2, '0')}:00`] as [string, string]),
+        String(s.pushHour),
+        (v) => { s.pushHour = Number(v); void this.persist(); },
+      )),
+    );
+    privacy.append(el('p', 'setting-hint', this.t('settings.notifHint')));
+    box.appendChild(privacy);
+
+    const refreshNotifStatus = async (): Promise<void> => {
+      const st = await pushState();
+      enabled = st.subscribed;
+      notifBtn.textContent = this.t(enabled ? 'settings.notifDisable' : 'settings.notifEnable');
+      if (!st.supported) notifStatus.textContent = this.t('settings.notifUnsupported');
+      else if (st.permission === 'denied') notifStatus.textContent = this.t('settings.notifDenied');
+      else if (enabled && st.delivery === 'pending-deployment') notifStatus.textContent = this.t('settings.notifPending');
+      else if (enabled) notifStatus.textContent = this.t('settings.notifOn');
+      else notifStatus.textContent = '';
+    };
+    void refreshNotifStatus();
+
     const actions = el('div', 'modal-row');
     if (!isInstalled()) {
       actions.append(
@@ -530,6 +613,33 @@ export class Shell {
   }
 
   // ---------- Export / import ----------
+
+  /** §15 data rights (server account data). */
+  private async exportAccountData(): Promise<void> {
+    try {
+      const data = await this.engine.exportData();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'minigames-account-export.json';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      toast(this.toastRoot, this.t('settings.exported'));
+    } catch {
+      toast(this.toastRoot, this.t('import.bad'));
+    }
+  }
+
+  private async eraseAccountData(): Promise<void> {
+    if (!window.confirm(this.t('settings.eraseConfirm'))) return;
+    try {
+      await this.engine.eraseData();
+      clearTelemetryQueue();
+      toast(this.toastRoot, this.t('settings.erased'));
+    } catch {
+      toast(this.toastRoot, this.t('import.bad'));
+    }
+  }
 
   private exportProgress(): void {
     try {

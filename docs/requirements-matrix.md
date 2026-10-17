@@ -55,7 +55,7 @@
 | 49 | D | Автоадаптация графики, цели 60/30 FPS | 01 §12 | src/games/plumber/presentation/scene.ts | measured p95 frame time steps decoration down/up or manual pin; real-device FPS NOT_RUN; long soak NOT_RUN | PARTIAL |
 | 50 | D | Полная многоуровневая приёмка с доказательствами | 01 §- | — | — | IN_PROGRESS |
 | 51 | D | Инструменты диагностики, replay, редактор для разработчика | 01 §- | — | — | IN_PROGRESS |
-| 52 | D | Аналитика с минимизацией данных/согласием | 01 §- | — | — | IN_PROGRESS |
+| 52 | D | Аналитика с минимизацией данных/согласием | 01 §15 | server/src/{validate,app}.ts, src/platform/telemetry.ts | diag (PII-free, no consent) vs analytics (versioned consent, anonymised userId=null, child subset, 180-day retention); revoke clears queue; data rights export/erase; server enforces allowlists | PASS |
 | 53 | D | Расширяемая локализация, сначала RU/EN | 01 §- | — | — | ru/en | PASS |
 | 54 | D | Комплексная доступность, общая и игровая | 01 §12 | src/platform/settings/store.ts | high contrast/large UI/reduced motion/flash-free/no-drag settings + root classes; colour-independent liquid symbols; keyboard with visible cursor; e2e a11y 4/4 | PASS |
 | 55 | D | Гибридная серверная проверка результатов | 01 §10 | — | — | IN_PROGRESS |
@@ -63,7 +63,7 @@
 | 57 | A | Нет пользовательского редактора, только генератор | 01 §- | — | — | no user editor | PASS |
 | 58 | C | Ежедневные и еженедельные общие испытания | 01 §- | — | — | UTC daily/weekly | PASS |
 | 59 | D | Единый UTC-календарь и офлайн-кэш задач | 01 §- | — | — | UTC+cache | PASS |
-| 60 | D | Необязательные push и внутриигровые уведомления | 01 §- | — | — | IN_PROGRESS |
+| 60 | D | Необязательные push и внутриигровые уведомления | 01 §15 | src/platform/notifications.ts, public/push-sw.js | strictly opt-in (no auto permission prompt), real PushManager subscribe/unsubscribe + `/push/*` + SW push handler; live delivery pending VAPID (BLOCKED_EXTERNAL) | PARTIAL |
 | 61 | D | Сейчас бесплатно и без рекламы, монетизация лишь точка расширения | 01 §- | — | — | free no ads | PASS |
 | 62 | D | Админ-панель с черновиками, проверкой, версиями и откатом | 01 §14 | server/src/{config-schema,certify}.ts, admin.html | strict schema 422 + certified preview + checksum/revision/changed fields + immutable history + rollback-as-new-version; player → 403; e2e admin 2/2 | PASS |
 | 63 | D | Гибридный конвейер графических ассетов; без заглушек при сдаче | 01 §8 | src/games/plumber/ | 8/8 APPROVED, usesFallback=false | PASS |

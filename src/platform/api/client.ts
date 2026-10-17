@@ -91,4 +91,17 @@ export class ApiClient {
       baseVersion,
     }) as Promise<SyncResponse>;
   }
+
+  // §15 data rights + push (structure only; live push needs deployment creds).
+  exportData(): Promise<{ export: Record<string, unknown> }> {
+    return this.request('GET', '/me/export') as Promise<{ export: Record<string, unknown> }>;
+  }
+
+  eraseData(): Promise<{ ok: boolean; erased: Record<string, number> }> {
+    return this.request('POST', '/me/erase', {}) as Promise<{ ok: boolean; erased: Record<string, number> }>;
+  }
+
+  pushStatus(): Promise<{ subscriptions: number }> {
+    return this.request('GET', '/push/status') as Promise<{ subscriptions: number }>;
+  }
 }
