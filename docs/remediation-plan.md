@@ -25,16 +25,16 @@ full: `04_PLUMBER_REMEDIATION_TZ_v1.2.md`, `README.md`,
 
 ## Section → work mapping (details in `docs/remediation-report.md`)
 1. Storage → FileStore+syncSave (done), PgStore+migrations (done, live run BLOCKED_EXTERNAL).
-2. Client sync → `src/platform/{api,sync,auth}` + IDB queue + shell UI (in progress).
-3. Pipe liquid → channel geometry + masked layers (planned, R2).
+2. Client sync → `src/platform/{api,sync,auth}` + IDB queue + shell UI (done).
+3. Pipe liquid → channel geometry + masked layers (done, R2).
 4. Test bypasses → `__TEST_HOOKS__`, hashed secrets, schema validation (done).
 5. Modes → explicit `mode` field + per-mode save (R3).
-6. Solver/generator → action model + bounded search + 10k mass (R3).
+6. Solver/generator → action model + bounded search + 10k mass (done).
 7. Input/camera → touch drag/pinch + keyboard + context (R3).
 8. Onboarding → action-based (R3).
 9. Collections/dioramas → unique objects + animated sets (R3/R4, art BLOCKED_ASSET).
 10. Daily+weekly → both entries + server manifest cache (R4).
-11. Share → full-definition URL+code preserve mode/versions (R3).
+11. Share → full-definition URL+code preserve mode/versions (done).
 12. Accessibility/sound/quality → settings + auto-quality (R3).
 13. Game/PWA versioning → migrations + hybrid cache (R5).
 14. Admin panel → web UI + real preview/publish/rollback (R5).
@@ -43,3 +43,18 @@ full: `04_PLUMBER_REMEDIATION_TZ_v1.2.md`, `README.md`,
 17. AssetGen reconcile (R5).
 18. CI + independent verification (R5).
 19. Docs consistency (R6).
+
+## Progress log
+| Date (UTC) | Commit | Item | Status | Evidence |
+|---|---|---|---|---|
+| 2026-10-17 | `08c7771` | §1 FileStore/`syncSave`/pg init | DONE (pg live BLOCKED_EXTERNAL) | `server/tests/{store,pg}.test.ts` 23 passed / 6 skipped |
+| 2026-10-17 | `6086299` | §3 liquid inside pipe channel | DONE | `tests/unit/plumber-channel.test.ts` (48); e2e plumber 6/6; screenshots |
+| 2026-10-17 | `eef6817` | §2 client↔account↔backend sync (whole platform) | DONE | unit sync-merge (7), server idempotency/stats/CORS/OTP (4), e2e `sync.spec.ts` 2/2 (two contexts) |
+| 2026-10-17 | `364a59e` | §11 short codes preserve `(mode, level)`; shared progress isolated | DONE | unit round-trip; e2e `share.spec.ts` 2/2 (identical across contexts) |
+| 2026-10-17 | `cbcd733` | §6 generator/solver proof at scale | DONE | 10000+ mass, 0 fails; `diagnose()` statuses; `evidence/plumber-mass-report.json` |
+| — | — | §5 modes, §7 input/camera, §8 onboarding, §9 art**, §10 daily+weekly, §12 a11y/quality, §13 versioning | TODO | — |
+| — | — | §14–§18 P2 | TODO | — |
+
+** Art-dependent item: temporary geometric prototypes allowed, kept `BLOCKED_ASSET`
+until real assets exist. Postgres/external items marked `BLOCKED_EXTERNAL`.
+
