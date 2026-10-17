@@ -35,7 +35,7 @@ full: `04_PLUMBER_REMEDIATION_TZ_v1.2.md`, `README.md`,
 9. Collections/dioramas → unique objects + animated sets (R3/R4, art BLOCKED_ASSET).
 10. Daily+weekly → both entries + server manifest cache (R4, done; weekly cloud sync PARTIAL).
 11. Share → full-definition URL+code preserve mode/versions (done).
-12. Accessibility/sound/quality → settings + auto-quality (R3).
+12. Accessibility/sound/quality → settings + auto-quality (R3, done; real-device FPS/long soak NOT_RUN).
 13. Game/PWA versioning → migrations + hybrid cache (R5).
 14. Admin panel → web UI + real preview/publish/rollback (R5).
 15. Analytics/consent/notifications (R5).
@@ -57,7 +57,8 @@ full: `04_PLUMBER_REMEDIATION_TZ_v1.2.md`, `README.md`,
 | 2026-10-17 | _§8_ | §8 reading-free onboarding | DONE | guide follows the certified witness and highlights the real cell/button with an action icon (rotate/valve/carry/start); single guided tap performs the action; mechanic unlocks introduce valve/filter/carry/multiflow/mixer/program on their levels; failure cause pulses on the real leaking cell; non-text skip, reduced-motion safe. Tests: `tests/unit/plumber-tutorial.test.ts` 4/4, `tests/e2e/onboarding.spec.ts` 3/3 desktop+mobile |
 | 2026-10-17 | _§9_ | §9 collections & dioramas | PARTIAL (art BLOCKED_ASSET) | 12 unique versioned projects in 4 themed sets (garden/city/industry/special); theme derived from level goals (not random); album grouped by set with locked silhouettes and tap-to-alive; completed set opens a full-screen living composition (touch interactive, no distortion at 390×844); unlocked object gets a skippable "came alive" flourish. Prototype geometry used (never emoji) — final unique art = BLOCKED_ASSET. Tests: `tests/unit/plumber-collections.test.ts` 3/3, `tests/e2e/collection.spec.ts` 2/2 desktop+mobile |
 | 2026-10-17 | _§10_ | §10 daily + weekly challenges | PARTIAL (weekly cloud sync) | one row with a "Задание дня" and a "Недельное испытание" entry; server manifest `challenge/1` pre-generates ≥7 daily + ≥2 weekly per mode with deterministic seeds (fnv parity with client); daily rolls at UTC midnight, weekly on Monday (non-Monday rejected 404); finished day archived in the panel; challenge replay keeps a single best score (double-reward safe); challenge wins never touch campaign `maxLevel`/collections; offline shows cached tasks with an honest note. Tests: `tests/unit/plumber-challenges.test.ts` 5/5, `server/tests/server.test.ts` manifest/resolve, `tests/e2e/challenge.spec.ts` 2/2 desktop+mobile (fake UTC clock). Weekly results are local-only (`save.weeklies`, not synced) → cloud weekly sync PARTIAL |
-| — | — | §12 a11y/quality, §13 versioning | TODO | — |
+| 2026-10-17 | _§12_ | §12 accessibility, sound, auto-quality, renderer fallback | PARTIAL (real-device FPS/soak NOT_RUN) | shared settings: high contrast, large UI, reduced motion, flash-free, no-drag, quality pin; applied as `<html>` classes and synced into the profile (customised fields win conflicts); colour-independent liquid symbols in the pipe scene; leak/fill cues + separate music/sfx volume + audio suspend on hidden + vibration gated by settings; auto-quality measures real p95 frame time and steps decoration down/up (never physics/masks/colours/command order); WebGL unavailable → Canvas fallback (no black screen), `?renderer=canvas` override. Tests: `tests/unit/plumber-a11y.test.ts` 4/4, `tests/e2e/a11y.spec.ts` 4/4 desktop+mobile. Real-device 60/30 FPS and 10–30 min soak = NOT_RUN |
+| — | — | §13 versioning | TODO | — |
 | — | — | §14–§18 P2 | TODO | — |
 
 ** Art-dependent item: temporary geometric prototypes allowed, kept `BLOCKED_ASSET`

@@ -1,7 +1,7 @@
 // Plumber game orchestrator: DOM chrome, trial driver, persistence, test hooks.
 // All rules live in domain/model; this file only wires commands -> scene -> save.
 import * as Phaser from 'phaser';
-import { AudioEngine } from '../../audio/engine';
+import { AudioEngine, vibrate } from '../../audio/engine';
 import { button, el, modal, toast } from '../../platform/ui/ui';
 import type { GameContext, GameHandle } from '../../platform/games/registry';
 import { getPlumberSave, syncPlumberMirror, PLUMBER_MODES, type PlumberSave, type PlumberSessionSave } from '../../platform/storage/save';
@@ -75,6 +75,9 @@ export class PlumberGame implements GameHandle {
   private skipBtn: HTMLButtonElement | null = null;
   private flourishEl: HTMLElement | null = null;
   private themeId: ThemeId = 'garden';
+  private lastLeak = -1;
+  private lastDelivered = 0;
+  private renderer: 'webgl' | 'canvas' | null = null;
 
   private constructor() {}
 
@@ -91,9 +94,26 @@ export class PlumberGame implements GameHandle {
     g.exposeTestHook();
     window.addEventListener('keydown', g.onKey);
     document.addEventListener('visibilitychange', g.onVis);
+    g.applyAudioPrefs();
+    for (const ev of ['pointerdown', 'keydown'] as const) {
+      window.addEventListener(ev, g.unlockAudio, { once: true });
+    }
     await g.persist();
     return g;
   }
+
+  /** §12: honour the shared music/sfx preferences on entry. */
+  private applyAudioPrefs = (): void => {
+    const s = this.ctx.settings;
+    this.audio.setVolumes(s.musicVolume, s.sfxVolume);
+    if (s.music) this.audio.startMusic();
+    else this.audio.stopMusic();
+  };
+
+  private unlockAudio = (): void => {
+    if (!this.audio.unlock()) return;
+    this.applyAudioPrefs();
+  };
 
   private get slot() {
     return getPlumberSave(this.ctx.save);
@@ -291,9 +311,18 @@ export class PlumberGame implements GameHandle {
     const rect = this.fieldEl.getBoundingClientRect();
     const w = Math.max(280, Math.floor(rect.width) || 360);
     const h = Math.max(280, Math.floor(rect.height) || 420);
+    // §12: WebGL is preferred; when it is unavailable fall back to Canvas instead
+    // of a black screen. `?renderer=canvas` forces the fallback for testing.
+    const forced = new URLSearchParams(location.search).get('renderer');
+    const webgl = supportsWebGL();
+    const type = forced === 'canvas' ? Phaser.CANVAS : forced === 'webgl' ? Phaser.WEBGL : webgl ? Phaser.WEBGL : Phaser.CANVAS;
+    if (forced !== 'canvas' && !webgl && typeof navigator !== 'undefined' && !('getContext' in document.createElement('canvas'))) {
+      toast(this.toastRoot!, this.ctx.t('err.webgl'));
+      return;
+    }
     try {
       this.game = new Phaser.Game({
-        type: Phaser.WEBGL,
+        type,
         parent: this.fieldEl,
         transparent: true,
         scale: { mode: Phaser.Scale.RESIZE, width: w, height: h },
@@ -304,6 +333,7 @@ export class PlumberGame implements GameHandle {
       toast(this.toastRoot!, this.ctx.t('err.webgl'));
       return;
     }
+    this.renderer = type === Phaser.CANVAS ? 'canvas' : 'webgl';
     this.game.scene.start('plumber', {
       def: this.def,
       refs: {
@@ -312,6 +342,10 @@ export class PlumberGame implements GameHandle {
         onDragStart: (i: number) => this.onDragStart(i),
         onMoveCell: (from: number, to: number) => this.onMoveCell(from, to),
         canMove: () => this.state?.phase === 'PREPARING' && this.hasMovable(),
+        settings: () => {
+          const s = this.ctx.settings;
+          return { symbols: s.symbols, reducedMotion: s.reducedMotion, flashFree: s.flashFree, noDrag: s.noDrag, quality: s.quality };
+        },
       },
     });
     this.scene = this.game.scene.getScene('plumber') as PlumberScene;
@@ -612,6 +646,14 @@ export class PlumberGame implements GameHandle {
       return;
     }
     stepTick(this.state);
+    // §12 audio cues: an audible leak and a filled receiver, distinct from win.
+    const phase: string = this.state.phase;
+    const leakCell = phase === 'FAILED' ? (this.state.errorCell ?? this.state.leakCell ?? -1) : this.state.leakCell ?? -1;
+    if (leakCell >= 0 && leakCell !== this.lastLeak) this.audio.leak();
+    this.lastLeak = leakCell;
+    const delivered = this.state.receiverGot.reduce((a, b) => a + b, 0);
+    if (delivered > this.lastDelivered) this.audio.fill();
+    this.lastDelivered = delivered;
     this.syncScene(null);
     this.refreshChrome();
     if (this.state.tick % 10 === 0) void this.persist();
@@ -623,6 +665,7 @@ export class PlumberGame implements GameHandle {
   private onWin(): void {
     this.stopTicker();
     this.audio.win();
+    if (this.ctx.settings.vibration) vibrate([40, 60, 40]);
     const slot = this.slot;
     const mode = this.def.mode;
     const mp = slot.modes[mode];
@@ -688,6 +731,7 @@ export class PlumberGame implements GameHandle {
   private onFailed(): void {
     this.stopTicker();
     this.audio.error();
+    if (this.ctx.settings.vibration) vibrate(30);
     this.bannerEl.textContent = this.ctx.t('plumber.failed') + (this.state.leakCell !== null ? ` (#${this.state.leakCell})` : '');
     this.bannerEl.hidden = false;
     // §8: show the real cause on the real cell, not just a red number.
@@ -1118,11 +1162,17 @@ export class PlumberGame implements GameHandle {
   }
 
   private handleVisibility(): void {
-    if (document.hidden && this.state.phase === 'RUNNING') {
-      applyCommand(this.state, { type: 'pause' });
-      this.stopTicker();
-      this.refreshChrome();
-      void this.persist();
+    // §12: silence audio whenever the app is backgrounded.
+    if (document.hidden) {
+      this.audio.suspend();
+      if (this.state.phase === 'RUNNING') {
+        applyCommand(this.state, { type: 'pause' });
+        this.stopTicker();
+        this.refreshChrome();
+        void this.persist();
+      }
+    } else {
+      this.audio.resume();
     }
   }
 
@@ -1243,6 +1293,8 @@ export class PlumberGame implements GameHandle {
       theme: () => this.themeId,
       projects: () => COLLECTIBLES.map((c) => ({ id: c.id, theme: c.theme, projectKey: c.projectKey, version: c.version })),
       collections: () => [...this.slot.collections],
+      renderer: () => this.renderer,
+      perf: () => this.scene?.perf() ?? null,
     };
   }
 
@@ -1265,6 +1317,8 @@ export class PlumberGame implements GameHandle {
     this.disposed = true;
     this.stopTicker();
     window.removeEventListener('keydown', this.onKey);
+    window.removeEventListener('pointerdown', this.unlockAudio);
+    window.removeEventListener('keydown', this.unlockAudio);
     document.removeEventListener('visibilitychange', this.onVis);
     try {
       await this.persist();
@@ -1283,5 +1337,15 @@ export class PlumberGame implements GameHandle {
     this.clearFlourish();
     this.root.remove();
     if (TEST_HOOKS) delete (window as unknown as { __PLUMBER__?: unknown }).__PLUMBER__;
+  }
+}
+
+function supportsWebGL(): boolean {
+  try {
+    if (typeof document === 'undefined') return true;
+    const c = document.createElement('canvas');
+    return Boolean(c.getContext('webgl') || c.getContext('experimental-webgl'));
+  } catch {
+    return false;
   }
 }

@@ -271,3 +271,31 @@ select, input[type='number'] {
 .challenge-offline { color: #e0a24e; }
 .challenge-archive { display: flex; flex-direction: column; gap: 4px; max-height: 30vh; overflow: auto; }
 .archive-row { font-size: 13px; opacity: 0.85; }
+
+/* §12 shared accessibility modes (toggled as classes on <html>). */
+.a11y-contrast {
+  --surface: #000000;
+  --surface-2: #0a0a0a;
+  --text: #ffffff;
+  --muted: #e5e5e5;
+  --accent: #ffd400;
+  --accent-2: #00e5ff;
+  --good: #00ff7f;
+  --warn: #ffb000;
+  --danger: #ff5252;
+  --focus: #ffd400;
+}
+.a11y-contrast .btn,
+.a11y-contrast .icon-btn,
+.a11y-contrast .action-btn { border-width: 2px; }
+.a11y-large { font-size: 118%; }
+.a11y-large .btn,
+.a11y-large .icon-btn,
+.a11y-large .action-btn { min-width: 52px; min-height: 52px; }
+.a11y-reduce-motion *,
+.a11y-flash-free * {
+  animation-duration: 0.001s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001s !important;
+}
+.a11y-flash-free .guide-pulse { animation: none !important; box-shadow: none !important; }

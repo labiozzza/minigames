@@ -22,7 +22,7 @@
 | 16 | D | Уровни, звёзды, статистика, раздельный прогресс | 01 §- | — | — | stars+separate progress | PASS |
 | 17 | D | Undo/redo, подсказки, решение и пропуск | 01 §- | src/games/plumber/ | E2E undo+solver/hint unit | PASS |
 | 18 | D | Offline-first, автосохранение и облачная синхронизация | 01 §10 | src/games/plumber/ | save/restore ok; полный offline-PWA тест pending | IN_PROGRESS |
-| 19 | D | Адаптивная аудиосистема, музыка, звуки, поддерживаемая вибрация | 01 §- | — | — | IN_PROGRESS |
+| 19 | D | Адаптивная аудиосистема, музыка, звуки, поддерживаемая вибрация | 01 §12 | src/audio/engine.ts | leak/fill/win cues; separate music/sfx volume; suspend on hidden; vibrate gated by setting | PASS |
 | 20 | D | Адаптивность, масштабирование и перемещение игрового поля | 01 §- | — | — | IN_PROGRESS |
 | 21 | D | Контекстный адаптивный интерфейс | 01 §- | — | — | context UI | PASS |
 | 22 | D | Поэтапное открытие механик с проверкой освоения | 01 §6 | — | — | curriculum unlocks | PASS |
@@ -52,12 +52,12 @@
 | 46 | D | Игровые модули с единым plugin-контрактом | 01 §- | — | src/games/plumber/domain/ | tests/unit/plumber-domain.test.ts + tests/levels/plumber-mass.test.ts (1200/1200 WON, volume ok) | PASS |
 | 47 | D | Контролируемые обновления, миграции и откат | 01 §10 | — | — | IN_PROGRESS |
 | 48 | D | Гибридный ленивый кэш и полная загрузка игр офлайн | 01 §10 | src/games/plumber/ | атлас в precache; ленивые чанки позже | PASS |
-| 49 | D | Автоадаптация графики, цели 60/30 FPS | 01 §- | — | — | IN_PROGRESS |
+| 49 | D | Автоадаптация графики, цели 60/30 FPS | 01 §12 | src/games/plumber/presentation/scene.ts | measured p95 frame time steps decoration down/up or manual pin; real-device FPS NOT_RUN; long soak NOT_RUN | PARTIAL |
 | 50 | D | Полная многоуровневая приёмка с доказательствами | 01 §- | — | — | IN_PROGRESS |
 | 51 | D | Инструменты диагностики, replay, редактор для разработчика | 01 §- | — | — | IN_PROGRESS |
 | 52 | D | Аналитика с минимизацией данных/согласием | 01 §- | — | — | IN_PROGRESS |
 | 53 | D | Расширяемая локализация, сначала RU/EN | 01 §- | — | — | ru/en | PASS |
-| 54 | D | Комплексная доступность, общая и игровая | 01 §- | — | — | IN_PROGRESS |
+| 54 | D | Комплексная доступность, общая и игровая | 01 §12 | src/platform/settings/store.ts | high contrast/large UI/reduced motion/flash-free/no-drag settings + root classes; colour-independent liquid symbols; keyboard with visible cursor; e2e a11y 4/4 | PASS |
 | 55 | D | Гибридная серверная проверка результатов | 01 §10 | — | — | IN_PROGRESS |
 | 56 | C | Обмен уровнями по deep link и короткому коду | 01 §- | — | — | link+code | PASS |
 | 57 | A | Нет пользовательского редактора, только генератор | 01 §- | — | — | no user editor | PASS |

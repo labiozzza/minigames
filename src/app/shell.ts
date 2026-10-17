@@ -8,7 +8,7 @@ import {
   storeSave,
   type SaveData,
 } from '../platform/storage/save';
-import { resolveTheme, sanitizeSettings, type Settings } from '../platform/settings/store';
+import { resolveTheme, sanitizeSettings, a11yClasses, type Settings } from '../platform/settings/store';
 import { isLang, translate, type Lang } from '../platform/i18n';
 import { getGame, type GameContext, type GameHandle } from '../platform/games/registry';
 import { button, el, modal, toast } from '../platform/ui/ui';
@@ -16,6 +16,8 @@ import { applyUpdate, canInstall, isInstalled, promptInstall } from '../platform
 import { SyncEngine } from '../platform/sync/engine';
 import { getStatus, subscribeStatus, type SyncStatus } from '../platform/sync/status';
 import { isSignedIn, getGuestId } from '../platform/auth/session';
+
+const A11Y_ALL = ['a11y-contrast', 'a11y-large', 'a11y-reduce-motion', 'a11y-flash-free'];
 
 export class Shell {
   private app: HTMLElement;
@@ -60,7 +62,9 @@ export class Shell {
   }
 
   private applyTheme(): void {
-    document.documentElement.dataset.theme = resolveTheme(this.settings);
+    const root = document.documentElement;
+    root.dataset.theme = resolveTheme(this.settings);
+    for (const c of A11Y_ALL) root.classList.toggle(c, a11yClasses(this.settings).includes(c));
   }
 
   /** Test/dev-only introspection. Absent in release builds. */
@@ -83,6 +87,7 @@ export class Shell {
 
   private async persist(): Promise<void> {
     this.save.settings = this.settings;
+    this.applyTheme();
     await storeSave(this.save);
   }
 
@@ -420,6 +425,16 @@ export class Shell {
         (v) => { s.speed = v as Settings['speed']; void this.persist(); },
       )),
       row(this.t('settings.symbols'), toggle(s.symbols, (v) => { s.symbols = v; void this.persist(); })),
+      row(this.t('settings.contrast'), toggle(s.contrast, (v) => { s.contrast = v; void this.persist(); })),
+      row(this.t('settings.largeUi'), toggle(s.largeUi, (v) => { s.largeUi = v; void this.persist(); })),
+      row(this.t('settings.reducedMotion'), toggle(s.reducedMotion, (v) => { s.reducedMotion = v; void this.persist(); })),
+      row(this.t('settings.flashFree'), toggle(s.flashFree, (v) => { s.flashFree = v; void this.persist(); })),
+      row(this.t('settings.noDrag'), toggle(s.noDrag, (v) => { s.noDrag = v; void this.persist(); })),
+      row(this.t('settings.quality'), sel(
+        [['auto', this.t('settings.qualityAuto')], ['high', this.t('settings.qualityHigh')], ['low', this.t('settings.qualityLow')]],
+        s.quality,
+        (v) => { s.quality = v as Settings['quality']; void this.persist(); },
+      )),
     );
     box.appendChild(form);
 

@@ -27,6 +27,16 @@ const WATER_COLORS: Record<string, number> = {
   purple: 0x9a6ee8,
 };
 
+export type Quality = 'auto' | 'high' | 'low';
+
+export interface SceneSettings {
+  symbols: boolean;
+  reducedMotion: boolean;
+  flashFree: boolean;
+  noDrag: boolean;
+  quality: Quality;
+}
+
 export interface SceneRefs {
   /** Short tap on a cell (rotate / phase-appropriate action). */
   onTapCell: (index: number) => void;
@@ -38,6 +48,8 @@ export interface SceneRefs {
   onMoveCell?: (from: number, to: number) => void;
   /** Whether the current level allows moving pipes (drag/carry). */
   canMove?: () => boolean;
+  /** §12 shared accessibility + graphics preferences. */
+  settings?: () => SceneSettings;
 }
 
 interface PointerTrack {
@@ -81,6 +93,13 @@ export class PlumberScene extends Phaser.Scene {
   private cameFrom: Array<Side | null> = [];
   private leak = -1;
   private hint = -1;
+  private qLevel = 0;
+  private frames: number[] = [];
+  private lowStreak = 0;
+
+  private prefs(): SceneSettings {
+    return this.refs.settings?.() ?? { symbols: false, reducedMotion: false, flashFree: false, noDrag: false, quality: 'auto' };
+  }
 
   constructor() {
     super('plumber');
@@ -203,7 +222,7 @@ export class PlumberScene extends Phaser.Scene {
       id: p.id, startX: p.x, startY: p.y, lastX: p.x, lastY: p.y,
       cell: cellIdx, startT: this.time.now, moved: false, dragging: false, longTimer: 0,
     };
-    if (this.pointers.size === 1 && cellIdx >= 0) {
+    if (this.pointers.size === 1 && cellIdx >= 0 && !this.prefs().noDrag) {
       track.longTimer = window.setTimeout(() => {
         if (!track.moved && this.pointers.size === 1 && this.refs.onSelectCell && this.refs.canMove?.()) {
           this.refs.onSelectCell(cellIdx);
@@ -250,7 +269,7 @@ export class PlumberScene extends Phaser.Scene {
       return;
     }
     // Single finger drag when moves are allowed → drag-and-drop move.
-    if (t.moved && this.refs.canMove?.() && !t.dragging) {
+    if (t.moved && !this.prefs().noDrag && this.refs.canMove?.() && !t.dragging) {
       t.dragging = true;
       this.refs.onDragStart?.(t.cell);
     }
@@ -318,7 +337,49 @@ export class PlumberScene extends Phaser.Scene {
   }
 
   private reducedMotion(): boolean {
+    const p = this.prefs();
+    if (p.reducedMotion || p.flashFree) return true;
     return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  /**
+   * §12 automatic quality: watch real frame times and step decoration down after
+   * a sustained p95 drop, step back up when the render recovers. Physics, masks,
+   * colors and command order are never touched. A manual setting pins the level.
+   */
+  update(_time: number, delta: number): void {
+    if (!Number.isFinite(delta) || delta <= 0) return;
+    this.frames.push(delta);
+    if (this.frames.length > 120) this.frames.shift();
+    const override = this.prefs().quality;
+    if (override === 'low') { this.setQuality(2); return; }
+    if (override === 'high') { this.setQuality(0); return; }
+    if (this.frames.length < 60) return;
+    const sorted = [...this.frames].sort((a, b) => a - b);
+    const p95 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))];
+    if (p95 > 33) this.lowStreak = Math.min(60, this.lowStreak + 1);
+    else if (p95 < 22) this.lowStreak = Math.max(-60, this.lowStreak - 1);
+    if (this.lowStreak >= 3 && this.qLevel < 2) { this.setQuality(this.qLevel + 1); this.lowStreak = 0; }
+    else if (this.lowStreak <= -6 && this.qLevel > 0) { this.setQuality(this.qLevel - 1); this.lowStreak = 0; }
+  }
+
+  private setQuality(level: number): void {
+    if (level === this.qLevel) return;
+    this.qLevel = level;
+    this.redrawAll();
+  }
+
+  /** §12 measured render stats (frame time in ms). */
+  perf(): { min: number; median: number; p95: number; samples: number; quality: number } {
+    if (this.frames.length === 0) return { min: 0, median: 0, p95: 0, samples: 0, quality: this.qLevel };
+    const s = [...this.frames].sort((a, b) => a - b);
+    return {
+      min: s[0],
+      median: s[Math.floor(s.length / 2)],
+      p95: s[Math.min(s.length - 1, Math.floor(s.length * 0.95))],
+      samples: s.length,
+      quality: this.qLevel,
+    };
   }
 
   /**
@@ -500,8 +561,10 @@ export class PlumberScene extends Phaser.Scene {
         const hgt = bodyH * Math.min(1, frac);
         g.fillStyle(color, 0.85);
         g.fillRoundedRect(x + inset, y + this.cell - inset - hgt, wdt, hgt, Math.min(10, wdt * 0.18));
-        g.lineStyle(2, 0xffffff, 0.18);
-        g.strokeRoundedRect(x + inset, y + this.cell - inset - bodyH, wdt, bodyH, Math.min(10, wdt * 0.18));
+        if (this.qLevel < 1) {
+          g.lineStyle(2, 0xffffff, 0.18);
+          g.strokeRoundedRect(x + inset, y + this.cell - inset - bodyH, wdt, bodyH, Math.min(10, wdt * 0.18));
+        }
       } else {
         this.drawChannelWater(g, i, x, y, kind, color, frac);
       }
@@ -510,6 +573,48 @@ export class PlumberScene extends Phaser.Scene {
     if (i === this.hint) {
       g.lineStyle(3, 0xf2c230, 1);
       g.strokeRoundedRect(x + 3, y + 3, this.cell - 6, this.cell - 6, 8);
+    }
+    // §12 colour-independent liquid symbols (same shape per liquid everywhere).
+    if (frac > 0 && this.prefs().symbols) this.drawSymbol(g, x + this.cell / 2, y + this.cell / 2, this.colors[i] ?? 'blue');
+  }
+
+  /** A white glyph with a dark outline: readable without distinguishing colour. */
+  private drawSymbol(g: Phaser.GameObjects.Graphics, cx: number, cy: number, liquid: string): void {
+    const r = this.cell * 0.15;
+    const lw = Math.max(2, r * 0.5);
+    const dark = 0x10202e;
+    const poly = (pts: Array<[number, number]>) => () => {
+      g.beginPath();
+      pts.forEach(([px2, py2], idx) => (idx === 0 ? g.moveTo(px2, py2) : g.lineTo(px2, py2)));
+      g.closePath();
+    };
+    if (liquid === 'red') {
+      g.lineStyle(lw, dark, 1);
+      g.strokeTriangle(cx, cy - r, cx - r, cy + r * 0.8, cx + r, cy + r * 0.8);
+      g.fillStyle(0xffffff, 1);
+      g.fillTriangle(cx, cy - r, cx - r, cy + r * 0.8, cx + r, cy + r * 0.8);
+    } else if (liquid === 'yellow') {
+      g.lineStyle(lw, dark, 1);
+      g.strokeRect(cx - r * 0.85, cy - r * 0.85, r * 1.7, r * 1.7);
+      g.fillStyle(0xffffff, 1);
+      g.fillRect(cx - r * 0.85, cy - r * 0.85, r * 1.7, r * 1.7);
+    } else if (liquid === 'green') {
+      poly([[cx - r, cy], [cx + r, cy], [cx, cy - r], [cx, cy + r]]);
+      g.lineStyle(lw * 1.7, dark, 1);
+      g.strokePath();
+      g.lineStyle(lw, 0xffffff, 1);
+      g.strokePath();
+    } else if (liquid === 'purple') {
+      poly([[cx, cy - r], [cx + r, cy], [cx, cy + r], [cx - r, cy]]);
+      g.lineStyle(lw, dark, 1);
+      g.strokePath();
+      g.fillStyle(0xffffff, 1);
+      g.fillPath();
+    } else {
+      g.lineStyle(lw, dark, 1);
+      g.strokeCircle(cx, cy, r * 0.9);
+      g.fillStyle(0xffffff, 1);
+      g.fillCircle(cx, cy, r * 0.9);
     }
   }
 
@@ -545,7 +650,9 @@ export class PlumberScene extends Phaser.Scene {
       const b = px(last.b);
       g.fillCircle(b.x, b.y, width / 2);
     }
-    // Inner highlight (reads as liquid depth, no topology change).
+    // Inner highlight (reads as liquid depth, no topology change). Dropped
+    // first when auto-quality steps down (§12): decoration only, never geometry.
+    if (this.qLevel >= 2) return;
     g.lineStyle(Math.max(1, width * 0.32), 0xffffff, 0.16);
     for (const s of filled) {
       const a = px(s.a);

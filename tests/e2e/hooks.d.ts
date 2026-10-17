@@ -37,6 +37,8 @@ declare global {
       theme(): string;
       projects(): { id: string; theme: string; projectKey: string; version: number }[];
       collections(): string[];
+      renderer(): 'webgl' | 'canvas' | null;
+      perf(): { min: number; median: number; p95: number; samples: number; quality: number } | null;
     };
     __MG_TEST__: {
       save(): {

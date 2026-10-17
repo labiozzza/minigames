@@ -105,6 +105,15 @@ export class AudioEngine {
     this.tone({ freq: 523, dur: 0.14, type: 'triangle', vol: 0.35 });
     this.tone({ freq: 784, dur: 0.2, type: 'triangle', vol: 0.35, delay: 0.1 });
   }
+  /** §12: a distinct dull leak, separate from the error blip. */
+  leak(): void {
+    this.tone({ freq: 220, freqEnd: 90, dur: 0.28, type: 'sawtooth', vol: 0.09 });
+    this.tone({ freq: 140, freqEnd: 80, dur: 0.22, type: 'sine', vol: 0.08, delay: 0.05 });
+  }
+  /** §12: a rising "receiver filled" cue, distinct from the win fanfare. */
+  fill(): void {
+    this.tone({ freq: 500, freqEnd: 720, dur: 0.16, type: 'sine', vol: 0.28 });
+  }
   win(): void {
     const seq = [523, 659, 784, 1047, 784, 1047];
     seq.forEach((f, i) => this.tone({ freq: f, dur: 0.22, type: 'triangle', vol: 0.4, delay: i * 0.13 }));

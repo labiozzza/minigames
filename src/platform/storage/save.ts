@@ -1,7 +1,7 @@
 // Versioned local save model, export/import with integrity checksum.
 // The checksum detects accidental corruption; it is NOT an authenticity guarantee.
 import { kvDel, kvGet, kvSet } from './idb';
-import { DEFAULT_SETTINGS, sanitizeSettings, type Settings } from '../settings/store';
+import { DEFAULT_SETTINGS, mergeSettings, sanitizeSettings, type Settings } from '../settings/store';
 
 export const SAVE_KEY = 'save-v1';
 export const BACKUP_KEY = 'save-backup-v1';
@@ -652,6 +652,7 @@ export function mergeSaves(current: SaveData, incoming: SaveData): SaveData {
     out.games[gameId] = merged as unknown as GameSave;
   }
   if (!out.lastPlayed && incoming.lastPlayed) out.lastPlayed = incoming.lastPlayed;
+  out.settings = mergeSettings(out.settings, incoming.settings);
   return out;
 }
 
