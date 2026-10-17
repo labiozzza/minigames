@@ -278,6 +278,18 @@ describe('progression utils', () => {
     expect(familyForLevel(5)).toBe('valve');
     expect(parseShareCode(shareCode('normal', 12))).toEqual({ mode: 'normal', level: 12 });
     expect(parseShareCode('junk')).toBe(null);
+    // Short codes preserve the difficulty mode unambiguously.
+    expect(parseShareCode(shareCode('child', 3))).toEqual({ mode: 'child', level: 3 });
+    expect(parseShareCode(shareCode('expert', 12))).toEqual({ mode: 'expert', level: 12 });
+    expect(parseShareCode('P-E-12')).toEqual({ mode: 'expert', level: 12 });
+    // A code resolves to the same definition on any client (mode is honored,
+    // not re-derived from the level number).
+    const mk = (mode: 'child' | 'normal' | 'expert', level: number) =>
+      generateLevel(`plumber-lvl-${level}`, (level * 2654435761) >>> 0, { mode, family: familyForLevel(level) });
+    expect(JSON.stringify(mk('expert', 12))).toBe(JSON.stringify(mk('expert', 12)));
+    expect(mk('expert', 12).mode).toBe('expert');
+    expect(mk('child', 3).mode).toBe('child');
+    expect(mk('expert', 12).mode).not.toBe(mk('normal', 12).mode);
     const got = unlockedCollectibles({ wins: 2, stars: 0, familiesWon: [], modesWon: [] }, []);
     expect(got).toContain('pipe-straight');
     expect(got).toContain('pipe-elbow');

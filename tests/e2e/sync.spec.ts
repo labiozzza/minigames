@@ -2,28 +2,6 @@ import { expect, test, type Page } from '@playwright/test';
 
 type PlumberSave = { completed: number[]; maxLevel: number; stars: Record<string, number>; collections: string[] };
 
-interface MgTest {
-  save: () => { games: Record<string, PlumberSave>; conflicts?: Record<string, unknown> };
-  status: () => { state: string; pending: number };
-  conflicts: () => string[];
-  syncNow: () => Promise<void>;
-  logout: () => void;
-  login: (email: string) => Promise<boolean>;
-}
-
-declare global {
-  interface Window {
-    __MG_TEST__: MgTest;
-    __PLUMBER__: {
-      phase: () => string;
-      sceneReady: () => boolean;
-      solve: () => void;
-      rotatable: () => number[];
-      rotate: (i: number) => void;
-    };
-  }
-}
-
 async function waitApp(page: Page): Promise<void> {
   await page.waitForFunction(() => typeof window.__MG_TEST__ !== 'undefined', null, { timeout: 30000 });
 }

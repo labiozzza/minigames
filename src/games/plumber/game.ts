@@ -25,7 +25,7 @@ import {
 } from './domain/model';
 import { generateLevel } from './domain/generator';
 import { hintFromWitness } from './domain/solver';
-import { computeStars, familyForLevel, modeForLevel, parseShareCode, shareCode, unlockedCollectibles, utcDayString, dailyPuzzleId, dailySeed, COLLECTIBLES, type ProgressSummary } from './domain/progression';
+import { computeStars, familyForLevel, modeForLevel, parseShareCode, shareCode, unlockedCollectibles, utcDayString, dailyPuzzleId, dailySeed, COLLECTIBLES, type Mode, type ProgressSummary } from './domain/progression';
 import { PLUMBER_ID } from './index';
 import { PlumberScene } from './presentation/scene';
 
@@ -139,6 +139,20 @@ export class PlumberGame implements GameHandle {
       this.refreshChrome();
       return;
     }
+    // Short share code: deterministic definition for that (mode, level). Kept
+    // separate from the player's own progress.
+    if (PlumberGame.pendingSharedCode) {
+      const { mode, level } = PlumberGame.pendingSharedCode;
+      PlumberGame.pendingSharedCode = null;
+      this.level = level;
+      this.sharedLevel = true;
+      this.def = generateLevel(`plumber-lvl-${level}`, (level * 2654435761) >>> 0, { mode, family: familyForLevel(level) });
+      this.state = createRuntime(this.def);
+      this.undoStack = [];
+      this.redoStack = [];
+      this.refreshChrome();
+      return;
+    }
     // Daily challenge: identical for everyone (UTC day seed).
     if (PlumberGame.pendingDaily) {
       const day = PlumberGame.pendingDaily;
@@ -188,7 +202,9 @@ export class PlumberGame implements GameHandle {
         return;
       }
     }
-    this.def = generateLevel(`plumber-lvl-${this.level}`, (this.level * 2654435761) >>> 0, { mode: modeForLevel(this.level), family: familyForLevel(this.level) });
+    const explicitMode: Mode | undefined =
+      this.ctx.mode === 'child' || this.ctx.mode === 'normal' || this.ctx.mode === 'expert' ? this.ctx.mode : undefined;
+    this.def = generateLevel(`plumber-lvl-${this.level}`, (this.level * 2654435761) >>> 0, { mode: explicitMode ?? modeForLevel(this.level), family: familyForLevel(this.level) });
     this.state = createRuntime(this.def);
     this.undoStack = [];
     this.redoStack = [];
@@ -501,12 +517,12 @@ export class PlumberGame implements GameHandle {
       const key = `${mode}:${this.level}`;
       slot.stars[key] = Math.max(slot.stars[key] ?? 0, stars);
       slot.fams[String(this.level)] = { family: this.def.family, mode };
-      this.ctx.save.lastPlayed = { gameId: PLUMBER_ID, levelNumber: this.level + 1 };
+    if (!this.sharedLevel) this.ctx.save.lastPlayed = { gameId: PLUMBER_ID, levelNumber: this.level + 1 };
     }
     if (this.dailyLevel) {
       slot.dailies[this.dailyLevel.day] = Math.max(slot.dailies[this.dailyLevel.day] ?? 0, stars);
     }
-    slot.active = null;
+    if (!this.sharedLevel) slot.active = null;
     // Collections: check unlocks.
     const summary = this.progressSummary(slot);
     const fresh = unlockedCollectibles(summary, slot.collections);
@@ -552,7 +568,7 @@ export class PlumberGame implements GameHandle {
   }
 
   private nextLevel(): void {
-    window.dispatchEvent(new CustomEvent('mg:play-level', { detail: { gameId: PLUMBER_ID, level: this.level + 1 } }));
+    window.dispatchEvent(new CustomEvent('mg:play-level', { detail: { gameId: PLUMBER_ID, level: this.level + 1, mode: this.def.mode } }));
   }
 
   private dailyLevel: { day: string } | null = null;
@@ -638,6 +654,7 @@ export class PlumberGame implements GameHandle {
 
   static pendingDaily: string | null = null;
   static pendingShared: LevelDefinition | null = null;
+  static pendingSharedCode: { mode: Mode; level: number } | null = null;
 
   private openShareCode(): void {
     const { t } = this.ctx;
@@ -655,6 +672,7 @@ export class PlumberGame implements GameHandle {
         toast(this.toastRoot!, t('plumber.badCode'));
         return;
       }
+      PlumberGame.pendingSharedCode = parsed;
       window.dispatchEvent(new CustomEvent('mg:play-level', { detail: { gameId: PLUMBER_ID, level: parsed.level } }));
     }, t('plumber.open')));
     box.append(row);
@@ -790,6 +808,7 @@ export class PlumberGame implements GameHandle {
   }
 
   private async persist(): Promise<void> {
+    if (this.sharedLevel) return;
     const slot = this.slot;
     const s = this.state;
     slot.active = {
@@ -852,6 +871,8 @@ export class PlumberGame implements GameHandle {
     (window as unknown as { __PLUMBER__?: unknown }).__PLUMBER__ = {
       phase: () => this.state.phase,
       level: () => this.level,
+      mode: () => this.def.mode,
+      puzzleId: () => this.def.puzzleId,
       checksum: () => checksum(this.state),
       volumeOk: () => totalVolume(this.state).ok,
       rotate: (i: number) => this.onTapCell(i),
