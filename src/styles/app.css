@@ -237,3 +237,30 @@ select, input[type='number'] {
   .app-title { font-size: 24px; }
   .back-label { display: none; }
 }
+
+/* --- Plumber collection album + diorama (§9, prototype art is BLOCKED_ASSET) --- */
+.album-grid { display: flex; flex-direction: column; gap: 14px; max-height: 70vh; overflow: auto; }
+.album-set { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 10px; }
+.album-set-head { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: baseline; font-weight: 600; }
+.album-card { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px; border-radius: 12px; background: rgba(255, 255, 255, 0.06); }
+.album-card.owned { cursor: pointer; }
+.album-card .project-svg { width: 100%; height: auto; max-height: 86px; display: block; }
+.album-name { font-size: 12px; text-align: center; }
+.album-card.locked .album-name { opacity: 0.6; }
+.project-svg.alive .spark { animation: project-spark 1.4s ease-in-out infinite; }
+.project-svg.alive { animation: project-breathe 2.6s ease-in-out infinite; }
+@keyframes project-breathe { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes project-spark { 0%, 100% { opacity: 0.2; } 50% { opacity: 1; } }
+.album-card.alive .project-svg { animation-duration: 1.2s; }
+.unlock-flourish { position: fixed; left: 50%; bottom: 74px; transform: translateX(-50%); display: flex; gap: 10px; align-items: flex-end; padding: 10px 14px; border-radius: 16px; background: rgba(20, 24, 30, 0.9); pointer-events: none; z-index: 60; }
+.unlock-card { display: flex; flex-direction: column; align-items: center; gap: 2px; animation: project-breathe 2.2s ease-in-out infinite; }
+.unlock-card .project-svg { width: 64px; height: 58px; }
+.unlock-name { font-size: 11px; }
+.unlock-skip { pointer-events: auto; }
+.diorama-stage { display: flex; justify-content: center; }
+.composition-svg { width: 100%; max-width: 560px; height: auto; }
+.diorama-stage .locked { opacity: 0.4; }
+.diorama-stage.sparkle .alive { animation: project-breathe 0.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .project-svg.alive, .unlock-card, .diorama-stage.sparkle .alive, .project-svg.alive .spark { animation: none; }
+}

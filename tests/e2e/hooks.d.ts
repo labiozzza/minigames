@@ -20,6 +20,23 @@ declare global {
       kindAt(i: number): string;
       carried(): string | null;
       cellCenter(i: number): { x: number; y: number } | null;
+      volumeOk(): boolean;
+      start(): void;
+      restart(): void;
+      undo(): void;
+      runToEnd(): string;
+      usesFallback(): boolean | null;
+      receiverGot(): number[];
+      water(): number[];
+      tick(): number;
+      fractions(): number[];
+      guide(): { action: string; cell: number | null; icon: string; mechanic: string } | null;
+      mechanic(): string | null;
+      tutorial(): string[];
+      skipTutorial(): void;
+      theme(): string;
+      projects(): { id: string; theme: string; projectKey: string; version: number }[];
+      collections(): string[];
     };
     __MG_TEST__: {
       save(): {

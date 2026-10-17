@@ -76,27 +76,58 @@ export function suggestNudge(stats: ModeStats): 'easier' | 'steady' | 'harder' {
 
 // ---------- collections ----------
 
+export type ThemeId = 'garden' | 'city' | 'industry' | 'special';
+
+export interface Theme {
+  id: ThemeId;
+  /** i18n key for the set name. */
+  nameKey: string;
+}
+
+export const THEMES: Theme[] = [
+  { id: 'garden', nameKey: 'plumber.theme.garden' },
+  { id: 'city', nameKey: 'plumber.theme.city' },
+  { id: 'industry', nameKey: 'plumber.theme.industry' },
+  { id: 'special', nameKey: 'plumber.theme.special' },
+];
+
 export interface Collectible {
   id: string;
-  /** Atlas frame for the album icon. */
+  /** Atlas frame for the album icon (final art). */
   frame: string;
+  /** Thematic set the reward belongs to. */
+  theme: ThemeId;
+  /** Unique story object name (i18n key) — never a bare fitting. */
+  projectKey: string;
+  /** Prototype shape used until final art lands (BLOCKED_ASSET). */
+  shape: string;
+  /** Bump when the object's art/behaviour changes. */
+  version: number;
   rule: { type: 'winFamily'; family: Family } | { type: 'wins'; count: number } | { type: 'stars'; count: number } | { type: 'winMode'; mode: Mode };
 }
 
 export const COLLECTIBLES: Collectible[] = [
-  { id: 'pipe-straight', frame: 'pipe_straight', rule: { type: 'wins', count: 1 } },
-  { id: 'pipe-elbow', frame: 'pipe_elbow', rule: { type: 'wins', count: 2 } },
-  { id: 'pipe-t', frame: 'pipe_t', rule: { type: 'winFamily', family: 'multiflow' } },
-  { id: 'pipe-cross', frame: 'pipe_cross', rule: { type: 'winFamily', family: 'multiflow' } },
-  { id: 'pipe-cap', frame: 'pipe_cap', rule: { type: 'winFamily', family: 'leakfix' } },
-  { id: 'valve', frame: 'valve_basic', rule: { type: 'winFamily', family: 'valve' } },
-  { id: 'filter', frame: 'filter_basic', rule: { type: 'winFamily', family: 'filter' } },
-  { id: 'mixer', frame: 'mixer_basic', rule: { type: 'winFamily', family: 'mixer' } },
-  { id: 'distributor', frame: 'distributor_basic', rule: { type: 'winFamily', family: 'exact' } },
-  { id: 'source', frame: 'source_basic', rule: { type: 'winMode', mode: 'normal' } },
-  { id: 'receiver', frame: 'receiver_basic', rule: { type: 'stars', count: 10 } },
-  { id: 'master', frame: 'pipe_cross', rule: { type: 'winMode', mode: 'expert' } },
+  { id: 'pipe-straight', frame: 'pipe_straight', theme: 'garden', projectKey: 'plumber.project.watering-can', shape: 'can', version: 1, rule: { type: 'wins', count: 1 } },
+  { id: 'pipe-elbow', frame: 'pipe_elbow', theme: 'garden', projectKey: 'plumber.project.fountain', shape: 'fountain', version: 1, rule: { type: 'wins', count: 2 } },
+  { id: 'pipe-t', frame: 'pipe_t', theme: 'garden', projectKey: 'plumber.project.arch', shape: 'arch', version: 1, rule: { type: 'winFamily', family: 'multiflow' } },
+  { id: 'pipe-cross', frame: 'pipe_cross', theme: 'city', projectKey: 'plumber.project.city-fountain', shape: 'fountain', version: 1, rule: { type: 'winFamily', family: 'multiflow' } },
+  { id: 'pipe-cap', frame: 'pipe_cap', theme: 'city', projectKey: 'plumber.project.leak-repair', shape: 'patch', version: 1, rule: { type: 'winFamily', family: 'leakfix' } },
+  { id: 'valve', frame: 'valve_basic', theme: 'city', projectKey: 'plumber.project.hydrant', shape: 'hydrant', version: 1, rule: { type: 'winFamily', family: 'valve' } },
+  { id: 'filter', frame: 'filter_basic', theme: 'industry', projectKey: 'plumber.project.waterworks', shape: 'tank', version: 1, rule: { type: 'winFamily', family: 'filter' } },
+  { id: 'mixer', frame: 'mixer_basic', theme: 'industry', projectKey: 'plumber.project.plant', shape: 'mixer', version: 1, rule: { type: 'winFamily', family: 'mixer' } },
+  { id: 'distributor', frame: 'distributor_basic', theme: 'industry', projectKey: 'plumber.project.turbine', shape: 'turbine', version: 1, rule: { type: 'winFamily', family: 'exact' } },
+  { id: 'source', frame: 'source_basic', theme: 'special', projectKey: 'plumber.project.well', shape: 'well', version: 1, rule: { type: 'winMode', mode: 'normal' } },
+  { id: 'receiver', frame: 'receiver_basic', theme: 'special', projectKey: 'plumber.project.tower', shape: 'tower', version: 1, rule: { type: 'stars', count: 10 } },
+  { id: 'master', frame: 'pipe_cross', theme: 'special', projectKey: 'plumber.project.aqueduct', shape: 'aqueduct', version: 1, rule: { type: 'winMode', mode: 'expert' } },
 ];
+
+/** Theme of a level, derived from its goals (receiver colour + family). */
+export function themeForGoals(color: string | undefined, family: string): ThemeId {
+  if (family === 'mixer' || family === 'filter' || family === 'exact' || color === 'purple') return 'industry';
+  if (family === 'multiflow' || family === 'valve' || family === 'leakfix' || color === 'red') return 'city';
+  if (family === 'carry' || family === 'program' || color === 'yellow') return 'special';
+  return 'garden';
+}
 
 export interface ProgressSummary {
   wins: number;

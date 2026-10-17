@@ -39,10 +39,10 @@
 | 33 | D | Победа на поле с оживлением окружения | 01 §- | — | — | IN_PROGRESS |
 | 34 | C | Окружение определяется задачей | 01 §- | — | — | IN_PROGRESS |
 | 35 | B | Коллекция выполненных проектов, без строительства города | 01 §- | — | — | IN_PROGRESS |
-| 36 | C | Тематические коллекции и достижения | 01 §- | — | — | IN_PROGRESS |
-| 37 | D | 12–16 начальных объектов, расширяемый каталог | 01 §- | — | — | IN_PROGRESS |
-| 38 | C | Интерактивный альбом коллекций | 01 §- | — | — | IN_PROGRESS |
-| 39 | B | Анимированная диорама за полный альбом | 01 §- | — | — | IN_PROGRESS |
+| 36 | C | Тематические коллекции и достижения | 01 §9 | src/games/plumber/domain/progression.ts | 4 themes x 3 objects; unit+E2E | PASS |
+| 37 | D | 12–16 начальных объектов, расширяемый каталог | 01 §9 | src/games/plumber/presentation/diorama.ts | 12 unique ids/versions; арт = BLOCKED_ASSET (прототипы) | BLOCKED_ASSET |
+| 38 | C | Интерактивный альбом коллекций | 01 §9 | src/games/plumber/game.ts | 4 themed sets, locked silhouettes, tap-alive | PASS |
+| 39 | B | Анимированная диорама за полный альбом | 01 §9 | src/games/plumber/presentation/diorama.ts | живая композиция per theme; E2E 390x844 | PASS |
 | 40 | C | Единый аккаунт MiniGames | 01 §10 | — | — | OTP server tested | PASS |
 | 41 | D | Гость сразу, потом email OTP и привязка | 01 §10 | — | — | guest link server tested | PASS |
 | 42 | D | Интеллектуальное слияние прогресса двух устройств | 01 §10 | — | — | IN_PROGRESS |

@@ -25,7 +25,8 @@ import {
 } from './domain/model';
 import { generateLevel } from './domain/generator';
 import { hintFromWitness } from './domain/solver';
-import { computeStars, familyForMode, parseShareCode, shareCode, unlockedCollectibles, utcDayString, dailyPuzzleId, dailySeed, COLLECTIBLES, type Mode, type ProgressSummary } from './domain/progression';
+import { computeStars, familyForMode, parseShareCode, shareCode, unlockedCollectibles, utcDayString, dailyPuzzleId, dailySeed, COLLECTIBLES, THEMES, themeForGoals, type Mode, type ProgressSummary, type ThemeId } from './domain/progression';
+import { projectSvg, themeComposition } from './presentation/diorama';
 import { PLUMBER_ID } from './index';
 import { PlumberScene } from './presentation/scene';
 import { mechanicsOf, nextGuide, pendingMechanic, type GuideStep, type Mechanic } from './tutorial/logic';
@@ -71,6 +72,8 @@ export class PlumberGame implements GameHandle {
   private cursor = 0;
   private guideStep: GuideStep | null = null;
   private skipBtn: HTMLButtonElement | null = null;
+  private flourishEl: HTMLElement | null = null;
+  private themeId: ThemeId = 'garden';
 
   private constructor() {}
 
@@ -560,6 +563,7 @@ export class PlumberGame implements GameHandle {
   }
 
   private onStartPause(): void {
+    this.clearFlourish();
     const ph = this.state.phase;
     if (ph === 'PREPARING' || ph === 'STOPPED' || ph === 'FAILED') {
       this.bannerEl.hidden = true;
@@ -641,7 +645,7 @@ export class PlumberGame implements GameHandle {
     const fresh = unlockedCollectibles(summary, slot.collections);
     if (fresh.length > 0) {
       slot.collections.push(...fresh);
-      toast(this.toastRoot!, `${this.ctx.t('plumber.album')} +${fresh.length}`);
+      this.showUnlockFlourish(fresh);
     }
     const sink = this.ctx.progress;
     if (sink && !this.sharedLevel) {
@@ -833,32 +837,92 @@ export class PlumberGame implements GameHandle {
     toast(this.toastRoot!, `${code} ✓`);
   }
 
+  /** Non-textual "the object came alive" flourish; skippable, non-blocking. */
+  private showUnlockFlourish(ids: string[]): void {
+    this.clearFlourish();
+    if (!this.root) return;
+    const wrap = el('div', 'unlock-flourish');
+    for (const id of ids) {
+      const c = COLLECTIBLES.find((x) => x.id === id);
+      if (!c) continue;
+      const card = el('div', 'unlock-card');
+      card.dataset.collectible = c.id;
+      card.dataset.theme = c.theme;
+      card.insertAdjacentHTML('afterbegin', projectSvg(c, { alive: true }));
+      card.append(el('div', 'unlock-name', this.ctx.t(c.projectKey)));
+      wrap.append(card);
+    }
+    const skip = button('✕', 'icon-btn unlock-skip', () => this.clearFlourish(), this.ctx.t('tutorial.skip'));
+    wrap.append(skip);
+    this.root.appendChild(wrap);
+    this.flourishEl = wrap;
+    const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduce) window.setTimeout(() => this.clearFlourish(), 6000);
+  }
+
+  private clearFlourish(): void {
+    this.flourishEl?.remove();
+    this.flourishEl = null;
+  }
+
   private openAlbum(): void {
     const { t } = this.ctx;
-    const { box } = modal(this.root, 'album');
+    const { box, close } = modal(this.root, 'album');
     box.append(el('h2', '', t('plumber.album')));
     const slot = this.slot;
     const summary = this.progressSummary(slot);
     const grid = el('div', 'album-grid');
-    for (const c of COLLECTIBLES) {
-      const owned = slot.collections.includes(c.id);
-      const card = el('div', owned ? 'album-card owned' : 'album-card locked');
-      const img = document.createElement('img');
-      img.src = `assets/plumber/tiles/${c.frame}.png`;
-      img.alt = c.id;
-      img.loading = 'lazy';
-      if (!owned) img.classList.add('silhouette');
-      img.onerror = () => {
-        img.replaceWith(el('div', 'album-emoji', owned ? '🔧' : '❓'));
-      };
-      card.append(img, el('div', 'album-name', owned ? c.id : '???'));
-      grid.append(card);
+    for (const theme of THEMES) {
+      const items = COLLECTIBLES.filter((c) => c.theme === theme.id);
+      const ownedCount = items.filter((c) => slot.collections.includes(c.id)).length;
+      const section = el('div', 'album-set');
+      const head = el('div', 'album-set-head');
+      head.append(el('span', 'album-set-name', t(theme.nameKey)), el('span', 'muted', `${ownedCount}/${items.length}`));
+      section.append(head);
+      for (const c of items) {
+        const owned = slot.collections.includes(c.id);
+        // Final art is BLOCKED_ASSET: show the geometric prototype, never emoji.
+        const card = el('div', owned ? 'album-card owned' : 'album-card locked');
+        card.dataset.collectible = c.id;
+        card.dataset.theme = c.theme;
+        card.dataset.version = String(c.version);
+        card.insertAdjacentHTML('afterbegin', projectSvg(c, { alive: owned, silhouette: !owned }));
+        card.append(el('div', 'album-name', owned ? t(c.projectKey) : '???'));
+        if (owned) card.addEventListener('click', () => card.classList.toggle('alive'));
+        section.append(card);
+      }
+      if (ownedCount === items.length && items.length > 0) {
+        const openBtn = button(t('plumber.diorama.open'), 'btn', () => {
+          close();
+          this.openDiorama(theme.id);
+        }, t('plumber.diorama.open'));
+        openBtn.classList.add('album-open');
+        section.append(openBtn);
+      }
+      grid.append(section);
     }
     box.append(grid);
     box.append(el('p', 'muted', `${summary.wins} ✓ · ${summary.stars} ★ · ${slot.collections.length}/${COLLECTIBLES.length}`));
-    if (slot.collections.length >= COLLECTIBLES.length) {
-      box.append(el('div', 'diorama', '🎉🏆🎉'));
-    }
+    box.append(el('p', 'muted prototype-note', t('plumber.prototype.note')));
+  }
+
+  /** Full-screen living composition of a completed themed set (touch-interactive). */
+  private openDiorama(themeId: ThemeId): void {
+    const { t } = this.ctx;
+    const theme = THEMES.find((x) => x.id === themeId) ?? THEMES[0];
+    const items = COLLECTIBLES.filter((c) => c.theme === themeId);
+    const { box, close } = modal(this.root, 'diorama-full');
+    box.classList.add('diorama-live');
+    box.append(el('h2', '', t(theme.nameKey)));
+    const stage = el('div', 'diorama-stage');
+    stage.innerHTML = themeComposition(theme, items, this.slot.collections);
+    const playHint = el('div', 'diorama-hint', t('plumber.diorama.touch'));
+    stage.addEventListener('pointerdown', () => {
+      stage.classList.toggle('sparkle');
+      this.audio.select();
+    });
+    box.append(stage, playHint);
+    box.append(button(t('game.back'), 'btn primary', () => close(), t('game.back')));
   }
 
   private exitToCatalog(): void {
@@ -933,6 +997,7 @@ export class PlumberGame implements GameHandle {
       return;
     }
     this.titleEl.textContent = `${t('plumber.name')} · ${t(`plumber.mode.${this.mode}`)} · ${t('game.level', { level: this.level })}`;
+    this.themeId = themeForGoals(this.def.receivers[0]?.color, this.def.family);
     if (this.modeBtn) this.modeBtn.textContent = t(`plumber.mode.short.${this.mode}`);
     const dots: Record<string, string> = { blue: '🔵', red: '🔴', yellow: '🟡', green: '🟢', purple: '🟣' };
     this.goalEl.textContent = this.def.receivers
@@ -1113,6 +1178,9 @@ export class PlumberGame implements GameHandle {
       mechanic: () => this.pendingMechanic(),
       tutorial: () => [...(this.slot.tutorial ?? [])],
       skipTutorial: () => this.skipTutorial(),
+      theme: () => this.themeId,
+      projects: () => COLLECTIBLES.map((c) => ({ id: c.id, theme: c.theme, projectKey: c.projectKey, version: c.version })),
+      collections: () => [...this.slot.collections],
     };
   }
 
@@ -1150,6 +1218,7 @@ export class PlumberGame implements GameHandle {
     this.scene = null;
     this.audio.dispose();
     this.toastRoot?.remove();
+    this.clearFlourish();
     this.root.remove();
     if (TEST_HOOKS) delete (window as unknown as { __PLUMBER__?: unknown }).__PLUMBER__;
   }
