@@ -19,6 +19,12 @@ const KIND_TEXTURE: Record<string, string> = {
   receiver: 'receiver_basic',
 };
 
+/** Field art (no ports): ground texture + cosmetic decor prop. */
+const GROUND_FRAME = 'env_ground';
+const DECOR_FRAME = 'env_garden_bush';
+/** Art variants for a logical `blocked` cell — chosen deterministically per cell. */
+const OBSTACLE_FRAMES = ['obstacle_rock', 'obstacle_rocks', 'obstacle_mound'];
+
 const WATER_COLORS: Record<string, number> = {
   blue: 0x2fa8de,
   red: 0xe05a4e,
@@ -103,6 +109,9 @@ export class PlumberScene extends Phaser.Scene {
   private shownKinds: string[] = [];
   private gfx: Array<Phaser.GameObjects.Graphics> = [];
   private waterGfx: Array<Phaser.GameObjects.Graphics> = [];
+  private groundGfx: Phaser.GameObjects.Graphics | null = null;
+  private groundLayer: Phaser.GameObjects.TileSprite | null = null;
+  private lockLayer: Phaser.GameObjects.Graphics | null = null;
   private fallback = false;
   private refs: SceneRefs = { onTapCell: () => undefined };
   private rots: number[] = [];
@@ -483,34 +492,45 @@ export class PlumberScene extends Phaser.Scene {
   private buildCells(): void {
     for (const s of this.sprites) s?.destroy();
     for (const g of [...this.gfx, ...this.waterGfx]) g.destroy();
+    this.groundLayer?.destroy();
+    this.groundLayer = null;
+    this.groundGfx?.destroy();
+    this.lockLayer?.destroy();
     this.sprites = [];
     this.gfx = [];
     this.waterGfx = [];
     this.shownKinds = this.def.cells.map((_, i) => this.kindOf(i));
+    this.buildGround();
     const n = this.def.gridW * this.def.gridH;
     for (let i = 0; i < n; i++) {
       const { x, y } = this.cellXY(i);
-      const bg = this.add.graphics();
-      bg.setDepth(0);
-      bg.fillStyle(0x141c2e, 1);
-      bg.fillRoundedRect(x, y, this.cell, this.cell, Math.max(4, this.cell * 0.08));
-      bg.lineStyle(1, 0x2a3a55, 1);
-      bg.strokeRoundedRect(x, y, this.cell, this.cell, Math.max(4, this.cell * 0.08));
-      this.gfx.push(bg);
       const kind = this.kindOf(i);
-      const frame = KIND_TEXTURE[kind];
-      if (!this.fallback && frame && this.textures.get('plumber').has(frame)) {
+      const frame = kind === 'empty' ? null : this.frameFor(kind, i);
+      if (frame) {
         const img = this.add.image(x + this.cell / 2, y + this.cell / 2, 'plumber', frame);
         img.setDisplaySize(this.cell * 0.96, this.cell * 0.96);
         // Orientation is applied at creation: the very first frame already matches
-        // the model. No deferred sync/timer may be required for a correct view.
-        img.setAngle((this.rots[i] ?? 0) * 90);
+        // the model. Obstacles/ground are never rotated.
+        img.setAngle(kind === 'blocked' ? 0 : (this.rots[i] ?? 0) * 90);
         img.setData('cell', i);
         // The approved glass tiles are opaque through the bore, so the liquid layer
         // must sit *above* the sprite (depth 2) and be clipped to a band narrower
         // than the tube, leaving the walls visible around it → reads as inside.
         img.setDepth(1);
         this.sprites.push(img);
+      } else if (kind === 'empty') {
+        // Free ground: no tile and no marker — the ground layer shows through.
+        // A small cosmetic prop may sit in the corner (never blocks, never rotatable).
+        const decor = this.decorFor(i);
+        if (decor) {
+          const d = this.add.image(x + this.cell * 0.72, y + this.cell * 0.78, 'plumber', decor);
+          d.setDisplaySize(this.cell * 0.4, this.cell * 0.4);
+          d.setAlpha(0.92);
+          d.setDepth(0);
+          this.sprites.push(d);
+        } else {
+          this.sprites.push(null);
+        }
       } else {
         const g = this.add.graphics();
         g.setData('cell', i);
@@ -522,7 +542,58 @@ export class PlumberScene extends Phaser.Scene {
       wg.setDepth(2);
       this.waterGfx.push(wg);
     }
+    this.lockLayer = this.add.graphics();
+    this.lockLayer.setDepth(3);
     this.redrawAll();
+  }
+
+  /** Texture frame for a cell: pipe sprite, obstacle variant, or null (empty/no art). */
+  private frameFor(kind: string, i: number): string | null {
+    if (kind === 'empty') return null;
+    if (kind === 'blocked') {
+      const list = OBSTACLE_FRAMES.filter((f) => this.hasFrame(f));
+      if (list.length === 0) return null;
+      return list[(i * 2654435761 >>> 0) % list.length];
+    }
+    const f = KIND_TEXTURE[kind];
+    return f && this.hasFrame(f) ? f : null;
+  }
+
+  private hasFrame(frame: string): boolean {
+    return !this.fallback && this.textures.get('plumber').has(frame);
+  }
+
+  /** Cosmetic corner prop on some empty cells — scenery only, never gameplay. */
+  private decorFor(i: number): string | null {
+    if (!this.hasFrame(DECOR_FRAME)) return null;
+    return (i * 40503 >>> 0) % 3 === 0 ? DECOR_FRAME : null;
+  }
+
+  /** One cohesive ground for the whole field: a soil texture clipped to the bounds. */
+  private buildGround(): void {
+    const pad = Math.round(this.cell * 0.14);
+    const w = this.cell * this.def.gridW + pad * 2;
+    const h = this.cell * this.def.gridH + pad * 2;
+    const x0 = this.ox - pad;
+    const y0 = this.oy - pad;
+    const g = this.add.graphics();
+    g.setDepth(-11);
+    if (this.hasFrame(GROUND_FRAME)) {
+      const ts = this.add.tileSprite(x0 + w / 2, y0 + h / 2, w, h, 'plumber', GROUND_FRAME);
+      ts.setDepth(-13);
+      const scale = (this.cell * 1.4) / Math.max(1, ts.frame.width || 256);
+      ts.setTileScale(scale, scale);
+      this.groundLayer = ts;
+    } else {
+      g.fillStyle(0x3a3128, 1);
+      g.fillRect(x0, y0, w, h);
+    }
+    // Border + inner shade drawn above the ground so the field reads as one panel.
+    g.fillStyle(0x000000, 0.16);
+    g.fillRect(x0, y0, w, Math.max(3, this.cell * 0.05));
+    g.lineStyle(Math.max(2, this.cell * 0.04), 0x1b140d, 0.9);
+    g.strokeRect(x0, y0, w, h);
+    this.groundGfx = g;
   }
 
   cellXY(i: number): { x: number; y: number } {
@@ -575,20 +646,22 @@ export class PlumberScene extends Phaser.Scene {
   }
 
   private rebuildCell(i: number): void {
-    const spr = this.sprites[i];
-    spr?.destroy();
+    this.sprites[i]?.destroy();
     this.sprites[i] = null;
+    for (const g of this.gfx) if (g.getData('cell') === i) g.destroy();
+    this.gfx = this.gfx.filter((g) => g.getData('cell') !== i);
     const { x, y } = this.cellXY(i);
     const kind = this.kindOf(i);
-    const frame = KIND_TEXTURE[kind];
-    if (!this.fallback && frame && this.textures.get('plumber').has(frame)) {
+    const frame = kind === 'empty' ? null : this.frameFor(kind, i);
+    if (frame) {
       const img = this.add.image(x + this.cell / 2, y + this.cell / 2, 'plumber', frame);
       img.setDisplaySize(this.cell * 0.96, this.cell * 0.96);
-      img.setAngle((this.rots[i] ?? 0) * 90);
+      img.setAngle(kind === 'blocked' ? 0 : (this.rots[i] ?? 0) * 90);
       img.setDepth(1);
       this.sprites[i] = img;
-    } else {
+    } else if (kind !== 'empty') {
       const g = this.add.graphics();
+      g.setData('cell', i);
       this.drawPrimitive(g, i, x, y);
       this.gfx.push(g);
     }
@@ -598,6 +671,36 @@ export class PlumberScene extends Phaser.Scene {
   private redrawAll(): void {
     const n = this.def.gridW * this.def.gridH;
     for (let i = 0; i < n; i++) this.drawWater(i);
+    this.drawLocks();
+  }
+
+  /** Locked cells get an explicit padlock: a clear "not movable" state, not a grey dot. */
+  private drawLocks(): void {
+    const g = this.lockLayer;
+    if (!g) return;
+    g.clear();
+    const n = this.def.gridW * this.def.gridH;
+    for (let i = 0; i < n; i++) {
+      if (!this.def.cells[i].locked) continue;
+      this.drawLockBadge(g, this.cellXY(i).x, this.cellXY(i).y);
+    }
+  }
+
+  private drawLockBadge(g: Phaser.GameObjects.Graphics, x: number, y: number): void {
+    const c = this.cell;
+    const cx = x + c / 2;
+    const cy = y + c * 0.6;
+    const s = c * 0.3;
+    g.fillStyle(0x0b111c, 0.5);
+    g.fillCircle(cx, cy, s * 0.95);
+    g.fillStyle(0xf2c230, 1);
+    g.fillRoundedRect(cx - s / 2, cy - s * 0.08, s, s * 0.7, s * 0.16);
+    g.lineStyle(Math.max(2, s * 0.16), 0xf2c230, 1);
+    g.beginPath();
+    g.arc(cx, cy - s * 0.08, s * 0.32, Math.PI, 0, false);
+    g.strokePath();
+    g.fillStyle(0x3a2c00, 1);
+    g.fillCircle(cx, cy + s * 0.26, s * 0.11);
   }
 
   private drawWater(i: number): void {
@@ -770,42 +873,87 @@ export class PlumberScene extends Phaser.Scene {
     return this.kinds[i] ?? this.def.cells[i].kind;
   }
 
-  /** Primitive fallback tile (no atlas frame): port stubs + kind glyph + TMP badge. */
+  /**
+   * Procedural tile for cells with no approved art. Semantics are explicit:
+   * empty → nothing (free ground), blocked → a real rock/obstacle, source/receiver
+   * → a reservoir; pipe kinds only reach here on a broken/absent atlas (their own
+   * marker shows then). The old grey circle + red bar for every kind is gone.
+   */
   private drawPrimitive(g: Phaser.GameObjects.Graphics, i: number, x: number, y: number): void {
+    const kind = this.kindOf(i);
+    if (kind === 'empty') return;
+    if (kind === 'blocked') {
+      this.drawRock(g, i, x, y);
+      return;
+    }
+    if (kind === 'source' || kind === 'receiver') {
+      this.drawTankPrimitive(g, x, y);
+      return;
+    }
     const c = this.cell;
     const cx = x + c / 2;
     const cy = y + c / 2;
-    const kind = this.kindOf(i);
     const open = kind !== 'valve' || (this.valves[i] ?? true);
-    g.fillStyle(open ? 0x3e4e61 : 0x2a3442, 1);
+    const body = open ? 0x3e4e61 : 0x2a3442;
+    g.fillStyle(body, 1);
     if (kind === 'mixer') g.fillRect(cx - c * 0.28, cy - c * 0.28, c * 0.56, c * 0.56);
     else g.fillCircle(cx, cy, c * 0.3);
     const ports = portsOf({ kind: kind as never, rot: this.rots[i] ?? 0, valveOpen: open }, this.rots[i] ?? 0);
-    g.fillStyle(open ? 0x3e4e61 : 0x2a3442, 1);
     const stub = c * 0.22;
     const th = c * 0.2;
     if (ports.top) g.fillRect(cx - th / 2, y + 2, th, stub);
     if (ports.bottom) g.fillRect(cx - th / 2, y + c - 2 - stub, th, stub);
     if (ports.left) g.fillRect(x + 2, cy - th / 2, stub, th);
     if (ports.right) g.fillRect(x + c - 2 - stub, cy - th / 2, stub, th);
-    if (kind === 'filter') {
-      g.fillStyle(0xf2c230, 1);
-      g.fillRect(cx - th / 2, cy - 2, th, 4);
-    }
-    if (kind === 'mixer') {
-      g.fillStyle(0x9a6ee8, 1);
-      g.fillCircle(cx, cy, c * 0.08);
-    }
-    if (kind === 'distributor') {
-      g.fillStyle(0xf2c230, 1);
-      g.fillCircle(cx, cy, c * 0.07);
-    }
+    if (kind === 'filter') { g.fillStyle(0xf2c230, 1); g.fillRect(cx - th / 2, cy - 2, th, 4); }
+    if (kind === 'mixer') { g.fillStyle(0x9a6ee8, 1); g.fillCircle(cx, cy, c * 0.08); }
+    if (kind === 'distributor') { g.fillStyle(0xf2c230, 1); g.fillCircle(cx, cy, c * 0.07); }
     if (kind === 'valve' && !open) {
       g.lineStyle(3, 0xe05a4e, 1);
       g.lineBetween(cx - c * 0.2, cy - c * 0.2, cx + c * 0.2, cy + c * 0.2);
     }
-    g.fillStyle(0xca443e, 1);
-    g.fillRect(cx - c * 0.16, y + c - 14, c * 0.32, 10);
+    // Missing-art marker only when the whole atlas is absent (dev/diagnostic build).
+    if (this.fallback) {
+      g.fillStyle(0xca443e, 1);
+      g.fillRect(cx - c * 0.16, y + c - 14, c * 0.32, 10);
+    }
+  }
+
+  /** A faceted boulder cluster — reads as terrain, never as a UI marker. */
+  private drawRock(g: Phaser.GameObjects.Graphics, i: number, x: number, y: number): void {
+    const c = this.cell;
+    const cx = x + c / 2;
+    const cy = y + c * 0.58;
+    const s = ((i * 2654435761) >>> 0) % 997 / 997; // deterministic 0..1
+    const r = c * (0.3 + s * 0.06);
+    const poly = (pts: Array<[number, number]>, col: number, a = 1): void => {
+      g.fillStyle(col, a);
+      g.beginPath();
+      g.moveTo(pts[0][0], pts[0][1]);
+      for (let k = 1; k < pts.length; k++) g.lineTo(pts[k][0], pts[k][1]);
+      g.closePath();
+      g.fillPath();
+    };
+    g.fillStyle(0x000000, 0.22);
+    g.fillEllipse(cx, cy + r * 0.75, r * 2.1, r * 0.7);
+    poly([
+      [cx - r, cy + r * 0.5], [cx - r * 0.8, cy - r * 0.35], [cx - r * 0.1, cy - r * 0.72],
+      [cx + r * 0.7, cy - r * 0.3], [cx + r, cy + r * 0.5],
+    ], 0x6b6258);
+    poly([
+      [cx - r * 0.8, cy - r * 0.35], [cx - r * 0.1, cy - r * 0.72], [cx + r * 0.1, cy - r * 0.15], [cx - r * 0.5, cy + r * 0.1],
+    ], 0x8a8177);
+    g.fillStyle(0x554d45, 1);
+    g.fillCircle(cx + r * 0.55, cy + r * 0.4, r * 0.22);
+  }
+
+  private drawTankPrimitive(g: Phaser.GameObjects.Graphics, x: number, y: number): void {
+    const c = this.cell;
+    const inset = c * 0.2;
+    g.fillStyle(0x22364a, 1);
+    g.fillRoundedRect(x + inset, y + inset, c - inset * 2, c - inset * 2, c * 0.16);
+    g.lineStyle(2, 0x9fc4dd, 0.8);
+    g.strokeRoundedRect(x + inset, y + inset, c - inset * 2, c - inset * 2, c * 0.16);
   }
 
   /** Primitive fallback tile (no atlas): port stubs + TMP badge, dev-visible. */

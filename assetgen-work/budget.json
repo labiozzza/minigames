@@ -1,7 +1,7 @@
 {
   "low_used": 13,
   "low_limit": 24,
-  "medium_used": 13,
+  "medium_used": 16,
   "medium_limit": 16,
   "log": [
     {
@@ -84,7 +84,7 @@
       ]
     },
     {
-      "event": "defect-fix \u00a75 obstacles",
+      "event": "defect-fix §5 obstacles",
       "quality": "medium",
       "assets": [
         "obstacle_rock"
@@ -92,12 +92,22 @@
       "result": "generated candidate, VALID_TECH 256x256; registered MANUAL_REVIEW_REQUIRED (approval open)"
     },
     {
-      "event": "defect-fix \u00a75 environment",
+      "event": "defect-fix §5 environment",
       "quality": "medium",
       "assets": [
         "env_garden_bush"
       ],
       "result": "generated candidate, VALID_TECH 256x256; registered MANUAL_REVIEW_REQUIRED (approval open)"
+    },
+    {
+      "event": "Round 2 P3 field art",
+      "quality": "medium",
+      "assets": [
+        "env_ground",
+        "obstacle_rocks",
+        "obstacle_mound"
+      ],
+      "result": "generated, VALID_TECH; vision-approved and wired (ground panel + obstacle variants). medium 13->16/16."
     }
   ]
 }

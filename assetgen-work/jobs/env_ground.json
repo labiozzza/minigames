@@ -1,0 +1,29 @@
+{
+  "id": "env_ground",
+  "request": {
+    "game_id": "plumber",
+    "asset_id": "env_ground",
+    "style_id": "plumber_2_5d_v1",
+    "kind": "environment-ground",
+    "logical_cell_px": 256,
+    "port_mask": {},
+    "prompt": null
+  },
+  "attempts": 1,
+  "max_attempts": 3,
+  "placeholder": null,
+  "created_at": "2026-10-18T00:00:00+00:00",
+  "history": [
+    {
+      "timestamp": "2026-10-18T00:00:00+00:00",
+      "event": "approved",
+      "to": "approved",
+      "reason": "generated + vision review passed; field ground texture"
+    }
+  ],
+  "origin": "gpt-image-subscription",
+  "status": "APPROVED",
+  "state": "approved",
+  "approved": true,
+  "source": "assetgen-work/candidates/env_ground_medium_1.png"
+}

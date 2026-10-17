@@ -9,8 +9,8 @@
     "port_mask": {},
     "prompt": null
   },
-  "status": "MANUAL_REVIEW_REQUIRED",
-  "state": "manual_review_required",
+  "status": "APPROVED",
+  "state": "approved",
   "attempts": 1,
   "max_attempts": 3,
   "placeholder": null,
@@ -21,9 +21,15 @@
       "event": "generated",
       "to": "manual_review_required",
       "reason": "gpt-image-subscription candidate, VALID_TECH; awaiting style/Phaser review"
+    },
+    {
+      "timestamp": "2026-10-18T00:00:00+00:00",
+      "event": "approved",
+      "to": "approved",
+      "reason": "vision review passed; wired as cosmetic corner decor on empty cells"
     }
   ],
-  "approved": false,
+  "approved": true,
   "origin": "gpt-image-subscription",
   "source": "assetgen-work/finals/env_garden_bush_medium_1.png"
 }

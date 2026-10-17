@@ -4,7 +4,7 @@
   "budget": {
     "low_used": 13,
     "low_limit": 24,
-    "medium_used": 13,
+    "medium_used": 16,
     "medium_limit": 16
   },
   "assets": {
@@ -118,43 +118,94 @@
       "state": "approved"
     },
     "obstacle_rock": {
-      "status": "MANUAL_REVIEW_REQUIRED",
-      "state": "manual_review_required",
-      "file": "assetgen-work/finals/obstacle_rock_medium_1.png",
+      "status": "APPROVED",
+      "state": "approved",
+      "file": "assets/plumber/tiles/obstacle_rock.png",
       "source": "assetgen-work/candidates/obstacle_rock_medium_1.png",
       "tech": "VALID_TECH",
       "warnings": [],
-      "review_status": "MANUAL_REVIEW_REQUIRED",
+      "review_status": "APPROVED",
       "kind": "obstacle-block",
       "version": 1,
       "prompt_hash": null,
-      "note": "obstacle tile candidate (blocked cells); style/Phaser integration pending human or vision review per assetgen gate 5",
-      "sha256_candidate": "87f703b6b30eef45b20336091c9afc6cba0029c656bf7a2640b0afdf5acb7bd7"
+      "note": "vision-approved: distinct faceted boulder, reads as blocker at 64/96px (evidence/screenshots/p3-preview-sheet.png, p3-field-expert-filled.png)",
+      "sha256_candidate": "87f703b6b30eef45b20336091c9afc6cba0029c656bf7a2640b0afdf5acb7bd7",
+      "ts_file": "assets/plumber/tiles/obstacle_rock.png",
+      "sha256_tile": "87f703b6b30eef45b20336091c9afc6cba0029c656bf7a2640b0afdf5acb7bd7"
     },
     "env_garden_bush": {
-      "status": "MANUAL_REVIEW_REQUIRED",
-      "state": "manual_review_required",
-      "file": "assetgen-work/finals/env_garden_bush_medium_1.png",
+      "status": "APPROVED",
+      "state": "approved",
+      "file": "assets/plumber/tiles/env_garden_bush.png",
       "source": "assetgen-work/candidates/env_garden_bush_medium_1.png",
       "tech": "VALID_TECH",
       "warnings": [],
-      "review_status": "MANUAL_REVIEW_REQUIRED",
+      "review_status": "APPROVED",
       "kind": "environment-decor",
       "version": 1,
       "prompt_hash": null,
-      "note": "garden decor candidate; style/Phaser integration pending human or vision review per assetgen gate 5",
-      "sha256_candidate": "478399d50f1bed4f163015937866e245c76e5681d17c9520cbc2d142a46a7751"
+      "note": "vision-approved: used as small cosmetic corner prop on empty cells; never blocks (evidence/screenshots/p3-field-expert-filled.png)",
+      "sha256_candidate": "478399d50f1bed4f163015937866e245c76e5681d17c9520cbc2d142a46a7751",
+      "ts_file": "assets/plumber/tiles/env_garden_bush.png",
+      "sha256_tile": "478399d50f1bed4f163015937866e245c76e5681d17c9520cbc2d142a46a7751"
+    },
+    "obstacle_rocks": {
+      "status": "APPROVED",
+      "state": "approved",
+      "review_status": "APPROVED",
+      "tech": "VALID_TECH",
+      "warnings": [],
+      "kind": "obstacle-block",
+      "version": 1,
+      "prompt_hash": null,
+      "source": "assetgen-work/candidates/obstacle_rocks_medium_1.png",
+      "file": "assets/plumber/tiles/obstacle_rocks.png",
+      "note": "vision-approved: rock cluster variant, distinct from single rock at 64/96px (p3-preview-sheet2.png)",
+      "sha256_candidate": "f7f205e7d782789bfedff3ce40ddedc7fbd842acd041d4bd5b30d72c80e7282d",
+      "sha256_tile": "d3aa0c5a9cbb08f869d656dced21fa59d87420a8447abc85c06d056f0830b747"
+    },
+    "obstacle_mound": {
+      "status": "APPROVED",
+      "state": "approved",
+      "review_status": "APPROVED",
+      "tech": "VALID_TECH",
+      "warnings": [],
+      "kind": "obstacle-block",
+      "version": 1,
+      "prompt_hash": null,
+      "source": "assetgen-work/candidates/obstacle_mound_medium_1.png",
+      "file": "assets/plumber/tiles/obstacle_mound.png",
+      "note": "vision-approved: earth mound variant with grass tufts/pebbles (p3-preview-sheet2.png)",
+      "sha256_candidate": "98591698202a1221bbc9ba820fc9241e5357e488420af77e61180abd0857e070",
+      "sha256_tile": "bcb4d28214f9b259718763a52be0b9b84a5a396a5e9846dfb0ab04fd36fe70fe"
+    },
+    "env_ground": {
+      "status": "APPROVED",
+      "state": "approved",
+      "review_status": "APPROVED",
+      "tech": "VALID_TECH",
+      "warnings": [],
+      "kind": "environment-ground",
+      "version": 1,
+      "prompt_hash": null,
+      "source": "assetgen-work/candidates/env_ground_medium_1.png",
+      "file": "assets/plumber/tiles/env_ground.png",
+      "note": "vision-approved: warm soil texture, laid as the field ground panel (p3-field-expert-filled.png)",
+      "sha256_candidate": "7169d43e2850d1f80b6866f82d2970b2e6bb15ac349bb410cf7f3b5cc478e4f4",
+      "sha256_tile": "4e4180c6ddb4f679e19efd08a479f9638c0cca06d5220a0b1082bf3fe98c5a42"
     }
   },
   "integration": {
     "atlas": "public/assets/plumber/atlas.png",
     "atlas_json": "public/assets/plumber/atlas.json",
-    "frames": 11,
+    "frames": 16,
     "phaser_screenshots": [
       "evidence/screenshots/plumber-preparing-desktop.png",
       "evidence/screenshots/plumber-running-desktop.png",
       "evidence/screenshots/plumber-win-desktop.png",
-      "evidence/screenshots/plumber-joints-3x3.png"
+      "evidence/screenshots/plumber-joints-3x3.png",
+      "evidence/screenshots/p3-field-normal-filled.png",
+      "evidence/screenshots/p3-field-expert-filled.png"
     ],
     "usesFallback_e2e": false,
     "frame_mismatch": []
@@ -164,8 +215,7 @@
     "splitter_basic",
     "switch_basic",
     "fixed_pipe_variant",
-    "collections x12-16",
-    "decor"
+    "collections x12-16"
   ],
   "provenance": {
     "distributor_basic": {

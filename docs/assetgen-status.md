@@ -47,15 +47,19 @@
 2. При появлении `OPENAI_API_KEY` + бюджет + разрешение: `pip install openai`, `process --allow-paid` по очереди, затем tech→vision→Phaser-integration gate (только после этого `APPROVED`).
 3. Смесители, разделённые каналы, декор, 12–16 коллекционных предметов — заявки после утверждения StyleBible человеком (не из случайных генераций).
 
-## 7. §5 кандидаты графики препятствий/окружения (2026-10-17)
+## 7. Field art — Round 2 P3 (2026-10-18)
 
-Провайдер доступен через канал `chatgpt-subscription` (инструмент `gpt_imagegen`). Сгенерированы 2 кандидата (medium), прошли только техническую проверку; стиль/интеграция — вручную или vision-ревьюером (гейт §5 → `MANUAL_REVIEW_REQUIRED`). Логика игры продолжает рисовать процедурные примитивы, кандидаты в продакшн-сцену НЕ подключены, пока не одобрены.
+Визуальный гейт пройден через vision-ревьюер (превью-листы при реальных размерах 64/96 px) и снимки реальной Phaser-сцены. Все ассеты `APPROVED`, подключены к атласу и сцене.
 
-| asset_id | kind | статус | файл (candidate) | tech QA |
+| asset_id | kind | статус | файл (tile) | превью |
 |---|---|---|---|---|
-| `obstacle_rock` | obstacle-block (ячейка `blocked`) | MANUAL_REVIEW_REQUIRED | `assetgen-work/finals/obstacle_rock_medium_1.png` | VALID_TECH 256×256 RGBA, bbox [12,17,244,238] |
-| `env_garden_bush` | environment-decor (садовая подставка) | MANUAL_REVIEW_REQUIRED | `assetgen-work/finals/env_garden_bush_medium_1.png` | VALID_TECH 256×256 RGBA, bbox [35,12,220,244] |
+| `obstacle_rock` | obstacle-block | APPROVED | `assets/plumber/tiles/obstacle_rock.png` | p3-preview-sheet.png |
+| `env_garden_bush` | environment-decor (угол пустой ячейки, декор) | APPROVED | `assets/plumber/tiles/env_garden_bush.png` | p3-preview-sheet.png |
+| `obstacle_rocks` | obstacle-block (группа камней) | APPROVED | `assets/plumber/tiles/obstacle_rocks.png` | p3-preview-sheet2.png |
+| `obstacle_mound` | obstacle-block (земляной холм) | APPROVED | `assets/plumber/tiles/obstacle_mound.png` | p3-preview-sheet2.png |
+| `env_ground` | environment-ground (почва) | APPROVED | `assets/plumber/tiles/env_ground.png` | p3-preview-sheet2.png |
 
-- Бюджет: `medium_used` 11 → 13 из 16 (`budget.json`), low без изменений.
-- `reconcile` идемпотентен (второй прогон `changed:0`), 11 `APPROVED` сохранены.
-- Осталось для `APPROVED`: независимый визуальный ревью против эталонов + снимки реальной Phaser-сцены; до этого графический гейт остаётся открытым, примитивы законны как `PLACEHOLDER`.
+- Бюджет: `medium_used` 13 → 16 из 16 (`budget.json`); low без изменений (0 новых).
+- Кандидаты `obstacle_rock`, `env_garden_bush` (ранее `MANUAL_REVIEW_REQUIRED`) подтверждены визуально и переведены в `APPROVED`.
+- Атлас пересобран детерминированно: `python3 tools/build_atlas.py` (16 кадров, `public/assets/plumber/atlas.{png,json}`). Превью-листы и экраны сцены — `evidence/screenshots/p3-*.png`.
+- Интеграция Phaser: земля — `TileSprite(env_ground)` под полем; `blocked` → вариант камня (детерминированно по индексу ячейки); `empty` → земля без маркеров + угол-декор; `locked` → бейдж-замок; серые круги/красные полосы убраны.
