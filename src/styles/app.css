@@ -264,3 +264,10 @@ select, input[type='number'] {
 @media (prefers-reduced-motion: reduce) {
   .project-svg.alive, .unlock-card, .diorama-stage.sparkle .alive, .project-svg.alive .spark { animation: none; }
 }
+
+/* --- Plumber daily/weekly challenges (§10) --- */
+.challenge-list { display: flex; flex-direction: column; gap: 8px; }
+.challenge-btn { width: 100%; text-align: center; }
+.challenge-offline { color: #e0a24e; }
+.challenge-archive { display: flex; flex-direction: column; gap: 4px; max-height: 30vh; overflow: auto; }
+.archive-row { font-size: 13px; opacity: 0.85; }

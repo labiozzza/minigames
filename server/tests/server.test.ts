@@ -133,6 +133,31 @@ describe('challenges and share', () => {
     const big = await api('/share', { method: 'POST', headers: AUTH(token), body: JSON.stringify({ def: { blob: 'x'.repeat(20000) } }) });
     expect(big.status).toBe(413);
   });
+  it('manifest carries >=7 daily and >=2 weekly pre-certified tasks per mode', async () => {
+    const token = await login('manifest@example.com');
+    for (const mode of ['child', 'normal', 'expert']) {
+      const r = await api(`/games/plumber/challenges?mode=${mode}`, { headers: AUTH(token) });
+      expect(r.status).toBe(200);
+      expect(r.body.version).toBe('challenge/1');
+      const list = r.body.challenges as Array<{ id: string; kind: string; mode: string; seed: number; version: string; day: string }>;
+      expect(list.filter((c) => c.kind === 'daily').length).toBeGreaterThanOrEqual(7);
+      expect(list.filter((c) => c.kind === 'weekly').length).toBeGreaterThanOrEqual(2);
+      for (const c of list) {
+        expect(c.mode).toBe(mode);
+        expect(c.version).toBe('challenge/1');
+        expect(c.seed).toBeGreaterThan(0);
+      }
+    }
+    // Same task on two independent clients (deterministic resolution).
+    const a = await api('/games/plumber/challenges/daily-2026-03-02?mode=normal', { headers: AUTH(token) });
+    const b = await api('/games/plumber/challenges/daily-2026-03-02?mode=normal', { headers: AUTH(token) });
+    expect(a.body).toEqual(b.body);
+    // Weekly must be a Monday; unknown ids are 404.
+    const tuesday = await api('/games/plumber/challenges/weekly-2026-03-03?mode=expert', { headers: AUTH(token) });
+    expect(tuesday.status).toBe(404);
+    const junk = await api('/games/plumber/challenges/daily-nope', { headers: AUTH(token) });
+    expect(junk.status).toBe(404);
+  });
   it('rejects malformed share definitions before write (fuzz)', async () => {
     const token = await login('fuzz@example.com');
     const cases = [

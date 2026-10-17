@@ -25,7 +25,8 @@ import {
 } from './domain/model';
 import { generateLevel } from './domain/generator';
 import { hintFromWitness } from './domain/solver';
-import { computeStars, familyForMode, parseShareCode, shareCode, unlockedCollectibles, utcDayString, dailyPuzzleId, dailySeed, COLLECTIBLES, THEMES, themeForGoals, type Mode, type ProgressSummary, type ThemeId } from './domain/progression';
+import { computeStars, familyForMode, parseShareCode, shareCode, unlockedCollectibles, utcDayString, COLLECTIBLES, THEMES, themeForGoals, type Mode, type ProgressSummary, type ThemeId } from './domain/progression';
+import { archiveEntries, CHALLENGE_HORIZON_DAYS, currentDaily, currentWeekly, resolveChallenge, weekStartUTC } from './domain/challenges';
 import { projectSvg, themeComposition } from './presentation/diorama';
 import { PLUMBER_ID } from './index';
 import { PlumberScene } from './presentation/scene';
@@ -167,17 +168,22 @@ export class PlumberGame implements GameHandle {
       this.refreshChrome();
       return;
     }
-    // Daily challenge: identical for everyone (UTC day seed).
-    if (PlumberGame.pendingDaily) {
-      const day = PlumberGame.pendingDaily;
-      PlumberGame.pendingDaily = null;
-      this.dailyLevel = { day };
-      this.def = generateLevel(dailyPuzzleId(day), dailySeed(day), { mode: 'normal', family: 'path' });
-      this.state = createRuntime(this.def);
-      this.undoStack = [];
-      this.redoStack = [];
-      this.refreshChrome();
-      return;
+    // Daily/weekly challenge: identical for everyone (deterministic spec).
+    if (PlumberGame.pendingChallenge) {
+      const { id, mode } = PlumberGame.pendingChallenge;
+      PlumberGame.pendingChallenge = null;
+      const spec = resolveChallenge(id, mode);
+      if (spec) {
+        this.challengeLevel = { kind: spec.kind, day: spec.day, id: spec.id };
+        this.mode = spec.mode;
+        this.level = 1;
+        this.def = generateLevel(spec.id, spec.seed, { mode: spec.mode, family: spec.family });
+        this.state = createRuntime(this.def);
+        this.undoStack = [];
+        this.redoStack = [];
+        this.refreshChrome();
+        return;
+      }
     }
     const saved = this.slot.modes[this.mode].active;
     if (saved && saved.levelNumber === this.level && saved.gridW * saved.gridH === saved.rots.length) {
@@ -623,7 +629,8 @@ export class PlumberGame implements GameHandle {
     slot.stats[mode].wins += 1;
     const par = this.def.par ?? this.def.solutionWitness.filter((c) => c.type === 'rotate').length;
     const stars = computeStars(par, this.state.playerRotations, this.state.hintsUsed);
-    if (!this.sharedLevel) {
+    let fresh: string[] = [];
+    if (!this.sharedLevel && !this.challengeLevel) {
       if (!mp.completed.includes(this.level)) mp.completed.push(this.level);
       mp.completed.sort((a, b) => a - b);
       mp.maxLevel = Math.max(mp.maxLevel, this.level + 1);
@@ -636,21 +643,23 @@ export class PlumberGame implements GameHandle {
       for (const mech of mechanicsOf(this.def)) if (!slot.tutorial.includes(mech)) slot.tutorial.push(mech);
       this.ctx.save.lastPlayed = { gameId: PLUMBER_ID, levelNumber: this.level + 1 };
       syncPlumberMirror(slot);
+      // Collections only from campaign wins (challenges never inflate them).
+      fresh = unlockedCollectibles(this.progressSummary(slot), slot.collections);
+      if (fresh.length > 0) {
+        slot.collections.push(...fresh);
+        this.showUnlockFlourish(fresh);
+      }
     }
-    if (this.dailyLevel) {
-      slot.dailies[this.dailyLevel.day] = Math.max(slot.dailies[this.dailyLevel.day] ?? 0, stars);
+    // Challenge rewards live in their own archive and never touch campaign progress.
+    if (this.challengeLevel) {
+      const map = this.challengeLevel.kind === 'weekly' ? slot.weeklies : slot.dailies;
+      map[this.challengeLevel.day] = Math.max(map[this.challengeLevel.day] ?? 0, stars);
     }
-    // Collections: check unlocks (aggregated across modes).
-    const summary = this.progressSummary(slot);
-    const fresh = unlockedCollectibles(summary, slot.collections);
-    if (fresh.length > 0) {
-      slot.collections.push(...fresh);
-      this.showUnlockFlourish(fresh);
-    }
+    syncPlumberMirror(slot);
     const sink = this.ctx.progress;
     if (sink && !this.sharedLevel) {
-      if (this.dailyLevel) {
-        sink.daily({ gameId: PLUMBER_ID, puzzleId: this.def.puzzleId, rulesetVersion: RULESET_VERSION, generatorVersion: GENERATOR_VERSION, day: this.dailyLevel.day, stars, mode });
+      if (this.challengeLevel) {
+        sink.daily({ gameId: PLUMBER_ID, puzzleId: this.def.puzzleId, rulesetVersion: RULESET_VERSION, generatorVersion: GENERATOR_VERSION, day: this.challengeLevel.day, stars, mode });
       } else {
         sink.win({ gameId: PLUMBER_ID, puzzleId: this.def.puzzleId, rulesetVersion: RULESET_VERSION, generatorVersion: GENERATOR_VERSION, level: this.level, mode, stars, family: this.def.family, collections: fresh });
       }
@@ -687,10 +696,14 @@ export class PlumberGame implements GameHandle {
   }
 
   private nextLevel(): void {
+    if (this.challengeLevel) {
+      this.exitToCatalog();
+      return;
+    }
     window.dispatchEvent(new CustomEvent('mg:play-level', { detail: { gameId: PLUMBER_ID, level: this.level + 1, mode: this.def.mode } }));
   }
 
-  private dailyLevel: { day: string } | null = null;
+  private challengeLevel: { kind: 'daily' | 'weekly'; day: string; id: string } | null = null;
   private sharedLevel = false;
   private mode: Mode = 'normal';
 
@@ -774,13 +787,17 @@ export class PlumberGame implements GameHandle {
     const row = el('div', 'modal-row');
     const today = utcDayString();
     const dailyDone = slot.dailies[today] ?? 0;
+    const week = weekStartUTC();
+    const weeklyDone = slot.weeklies[week] ?? 0;
     row.append(
       button(`${t('plumber.daily')}${dailyDone ? ' ★'.repeat(dailyDone) : ''}`, 'btn', () => {
         close();
-        PlumberGame.pendingDaily = today;
-        const idx = Math.floor(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()) / 86400000);
-        window.dispatchEvent(new CustomEvent('mg:play-level', { detail: { gameId: PLUMBER_ID, level: 80000 + (idx % 40000) } }));
+        this.openChallenges('daily');
       }, t('plumber.daily')),
+      button(`${t('plumber.weekly')}${weeklyDone ? ' ★'.repeat(weeklyDone) : ''}`, 'btn', () => {
+        close();
+        this.openChallenges('weekly');
+      }, t('plumber.weekly')),
       button(t('plumber.share'), 'btn', () => {
         close();
         this.shareLevel();
@@ -793,7 +810,46 @@ export class PlumberGame implements GameHandle {
     box.append(row);
   }
 
-  static pendingDaily: string | null = null;
+  /** Daily/weekly panel: current tasks per mode + archive (§10). */
+  private openChallenges(kind: 'daily' | 'weekly'): void {
+    const { t } = this.ctx;
+    const { box, close } = modal(this.root, `challenges ${kind}`);
+    box.append(el('h2', '', kind === 'daily' ? t('plumber.daily') : t('plumber.weekly')));
+    const slot = this.slot;
+    const map = kind === 'weekly' ? slot.weeklies : slot.dailies;
+    const now = new Date();
+    const list = el('div', 'challenge-list');
+    for (const m of PLUMBER_MODES) {
+      const cur = kind === 'daily' ? currentDaily(now, m) : currentWeekly(now, m);
+      if (!cur) continue;
+      const stars = map[cur.day] ?? 0;
+      const b = button(`${t(`plumber.mode.${m}`)}${stars ? ' ' + '★'.repeat(stars) : ''}`, 'btn challenge-btn', () => {
+        close();
+        PlumberGame.pendingChallenge = { id: cur.id, mode: m };
+        const idx = Math.floor(Date.parse(`${cur.day}T00:00:00.000Z`) / 86400000);
+        const offset = kind === 'daily' ? 80000 : 60000;
+        window.dispatchEvent(new CustomEvent('mg:play-level', { detail: { gameId: PLUMBER_ID, level: offset + (idx % 20000), mode: m } }));
+      }, `${kind} ${m}`);
+      list.append(b);
+    }
+    box.append(list);
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      box.append(el('p', 'muted challenge-offline', t('plumber.challenge.offline', { n: CHALLENGE_HORIZON_DAYS })));
+    }
+    const archive = archiveEntries(map, kind, now);
+    box.append(el('h3', '', t('plumber.archive')));
+    if (archive.length === 0) {
+      box.append(el('p', 'muted', t('plumber.archive.empty')));
+    } else {
+      const grid = el('div', 'challenge-archive');
+      for (const e of archive) {
+        grid.append(el('div', 'archive-row', `${e.day} · ${'★'.repeat(e.stars) || '–'}`));
+      }
+      box.append(grid);
+    }
+  }
+
+  static pendingChallenge: { id: string; mode?: Mode } | null = null;
   static pendingShared: LevelDefinition | null = null;
   static pendingSharedCode: { mode: Mode; level: number } | null = null;
 
@@ -959,7 +1015,7 @@ export class PlumberGame implements GameHandle {
   }
 
   private tutorialActive(): boolean {
-    if (this.sharedLevel || this.dailyLevel) return false;
+    if (this.sharedLevel || this.challengeLevel) return false;
     if (this.slot.tutorialSeen) return false;
     if (this.state.phase === 'WON') return false;
     return this.pendingMechanic() !== null;
@@ -1072,6 +1128,12 @@ export class PlumberGame implements GameHandle {
 
   private async persist(): Promise<void> {
     if (this.sharedLevel) return;
+    // Challenge sessions never overwrite the campaign's active level / mirror.
+    if (this.challengeLevel) {
+      syncPlumberMirror(this.slot);
+      await this.ctx.persist();
+      return;
+    }
     const slot = this.slot;
     const s = this.state;
     slot.modes[this.mode].active = {

@@ -181,11 +181,13 @@ export function createApp(opts: ServerOptions = {}): { server: Server; auth: Aut
       m = /^\/games\/([a-z-]+)\/challenges$/.exec(url.pathname);
       if (method === 'GET' && m) {
         const mode = url.searchParams.get('mode') ?? 'normal';
-        return send(res, 200, { challenges: challengeManifest(m[1], mode, now()) });
+        const horizon = Number(url.searchParams.get('horizon') ?? '7');
+        return send(res, 200, { version: CHALLENGE_VERSION, challenges: challengeManifest(m[1], mode, now(), horizon) });
       }
       m = /^\/games\/([a-z-]+)\/challenges\/([A-Za-z0-9-]+)$/.exec(url.pathname);
       if (method === 'GET' && m) {
-        const c = resolveChallenge(m[1], m[2]);
+        const mode = url.searchParams.get('mode') ?? undefined;
+        const c = resolveChallenge(m[1], m[2], mode);
         if (!c) return send(res, 404, { error: 'unknown-challenge' });
         return send(res, 200, { challenge: c });
       }
@@ -291,40 +293,68 @@ export function dayString(ts: number): string {
   return new Date(ts).toISOString().slice(0, 10);
 }
 
-function challengeManifest(gameId: string, mode: string, nowMs: number): Array<{ id: string; kind: string; day: string }> {
-  const day = dayString(nowMs);
-  const monday = new Date(nowMs);
-  const dow = (monday.getUTCDay() + 6) % 7;
-  monday.setUTCDate(monday.getUTCDate() - dow);
-  const week = monday.toISOString().slice(0, 10);
-  void gameId;
-  void mode;
-  return [
-    { id: `daily-${day}`, kind: 'daily', day },
-    { id: `weekly-${week}`, kind: 'weekly', day: week },
-  ];
+const CHALLENGE_VERSION = 'challenge/1';
+const CHALLENGE_HORIZON_DAYS = 7;
+const CHALLENGE_HORIZON_WEEKS = 2;
+const CHALLENGE_MODES = ['child', 'normal', 'expert'];
+
+function fnv(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
 }
 
-function resolveChallenge(gameId: string, id: string): { id: string; game: string; seed: number; mode: string } | null {
+function mondayString(ms: number): string {
+  const d = new Date(ms);
+  const dow = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - dow);
+  return d.toISOString().slice(0, 10);
+}
+
+export interface ChallengeEntry {
+  id: string;
+  kind: 'daily' | 'weekly';
+  day: string;
+  mode: string;
+  seed: number;
+  version: string;
+  game?: string;
+}
+
+/** Deterministic manifest: today..+horizon daily tasks and this week..+2 weekly,
+ *  validated and identical for every client (the source of truth after sync). */
+function challengeManifest(gameId: string, mode: string, nowMs: number, horizon = CHALLENGE_HORIZON_DAYS): Array<Omit<ChallengeEntry, 'seed'> & { seed: number }> {
+  const m = CHALLENGE_MODES.includes(mode) ? mode : 'normal';
+  const days = Math.max(CHALLENGE_HORIZON_DAYS, Math.min(60, Math.floor(horizon) || CHALLENGE_HORIZON_DAYS));
+  const base = Date.parse(`${dayString(nowMs)}T00:00:00.000Z`);
+  const out: Array<Omit<ChallengeEntry, 'seed'> & { seed: number }> = [];
+  for (let i = 0; i < days; i++) {
+    const day = dayString(base + i * 86400000);
+    out.push({ id: `daily-${day}`, kind: 'daily', day, mode: m, version: CHALLENGE_VERSION, seed: fnv(`daily:${m}:${day}`) });
+  }
+  const monday = Date.parse(`${mondayString(nowMs)}T00:00:00.000Z`);
+  for (let w = 0; w <= CHALLENGE_HORIZON_WEEKS; w++) {
+    const week = dayString(monday + w * 7 * 86400000);
+    out.push({ id: `weekly-${week}`, kind: 'weekly', day: week, mode: m, version: CHALLENGE_VERSION, seed: fnv(`weekly:${m}:${week}`) });
+  }
   void gameId;
-  let m = /^daily-(\d{4}-\d{2}-\d{2})$/.exec(id);
-  if (m) {
-    let h = 0x811c9dc5;
-    for (let i = 0; i < m[1].length; i++) {
-      h ^= m[1].charCodeAt(i);
-      h = Math.imul(h, 0x01000193);
-    }
-    return { id, game: gameId, seed: h >>> 0, mode: 'normal' };
-  }
-  m = /^weekly-(\d{4}-\d{2}-\d{2})$/.exec(id);
-  if (m) {
-    let h = 0x811c9dc5;
-    const s = `week:${m[1]}`;
-    for (let i = 0; i < s.length; i++) {
-      h ^= s.charCodeAt(i);
-      h = Math.imul(h, 0x01000193);
-    }
-    return { id, game: gameId, seed: h >>> 0, mode: 'expert' };
-  }
-  return null;
+  return out;
+}
+
+/** A challenge is fully determined by (kind, day, mode): same everywhere. */
+function resolveChallenge(gameId: string, id: string, modeHint?: string): ChallengeEntry | null {
+  const daily = /^daily-(\d{4}-\d{2}-\d{2})$/.exec(id);
+  const weekly = /^weekly-(\d{4}-\d{2}-\d{2})$/.exec(id);
+  const day = daily?.[1] ?? weekly?.[1];
+  if (!day || Number.isNaN(Date.parse(`${day}T00:00:00.000Z`))) return null;
+  const kind: 'daily' | 'weekly' = daily ? 'daily' : 'weekly';
+  // Day must be a real date; weekly must be a Monday.
+  const d = new Date(`${day}T00:00:00.000Z`);
+  if (d.toISOString().slice(0, 10) !== day) return null;
+  if (kind === 'weekly' && d.getUTCDay() !== 1) return null;
+  const mode = modeHint && CHALLENGE_MODES.includes(modeHint) ? modeHint : kind === 'weekly' ? 'expert' : 'normal';
+  return { id, kind, day, mode, seed: fnv(`${kind}:${mode}:${day}`), version: CHALLENGE_VERSION, game: gameId } as ChallengeEntry;
 }

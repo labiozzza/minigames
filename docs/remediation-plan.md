@@ -33,7 +33,7 @@ full: `04_PLUMBER_REMEDIATION_TZ_v1.2.md`, `README.md`,
 7. Input/camera → touch drag/pinch + keyboard + context (R3).
 8. Onboarding → action-based (R3).
 9. Collections/dioramas → unique objects + animated sets (R3/R4, art BLOCKED_ASSET).
-10. Daily+weekly → both entries + server manifest cache (R4).
+10. Daily+weekly → both entries + server manifest cache (R4, done; weekly cloud sync PARTIAL).
 11. Share → full-definition URL+code preserve mode/versions (done).
 12. Accessibility/sound/quality → settings + auto-quality (R3).
 13. Game/PWA versioning → migrations + hybrid cache (R5).
@@ -56,7 +56,8 @@ full: `04_PLUMBER_REMEDIATION_TZ_v1.2.md`, `README.md`,
 | 2026-10-17 | _§7_ | §7 full input, camera, contextual UI | DONE | tap/long-press/drag-drop via real pointer+touch, guarded accidental rotation, pinch+wheel zoom (clamped), 1-finger pan when zoomed, release-outside cancel, keyboard (arrows/Enter/space/V/Z/Y/H/N) + visible focus ring, min 44px targets. Tests: `tests/e2e/input.spec.ts` 5/5 desktop + mobile |
 | 2026-10-17 | _§8_ | §8 reading-free onboarding | DONE | guide follows the certified witness and highlights the real cell/button with an action icon (rotate/valve/carry/start); single guided tap performs the action; mechanic unlocks introduce valve/filter/carry/multiflow/mixer/program on their levels; failure cause pulses on the real leaking cell; non-text skip, reduced-motion safe. Tests: `tests/unit/plumber-tutorial.test.ts` 4/4, `tests/e2e/onboarding.spec.ts` 3/3 desktop+mobile |
 | 2026-10-17 | _§9_ | §9 collections & dioramas | PARTIAL (art BLOCKED_ASSET) | 12 unique versioned projects in 4 themed sets (garden/city/industry/special); theme derived from level goals (not random); album grouped by set with locked silhouettes and tap-to-alive; completed set opens a full-screen living composition (touch interactive, no distortion at 390×844); unlocked object gets a skippable "came alive" flourish. Prototype geometry used (never emoji) — final unique art = BLOCKED_ASSET. Tests: `tests/unit/plumber-collections.test.ts` 3/3, `tests/e2e/collection.spec.ts` 2/2 desktop+mobile |
-| — | — | §10 daily+weekly, §12 a11y/quality, §13 versioning | TODO | — |
+| 2026-10-17 | _§10_ | §10 daily + weekly challenges | PARTIAL (weekly cloud sync) | one row with a "Задание дня" and a "Недельное испытание" entry; server manifest `challenge/1` pre-generates ≥7 daily + ≥2 weekly per mode with deterministic seeds (fnv parity with client); daily rolls at UTC midnight, weekly on Monday (non-Monday rejected 404); finished day archived in the panel; challenge replay keeps a single best score (double-reward safe); challenge wins never touch campaign `maxLevel`/collections; offline shows cached tasks with an honest note. Tests: `tests/unit/plumber-challenges.test.ts` 5/5, `server/tests/server.test.ts` manifest/resolve, `tests/e2e/challenge.spec.ts` 2/2 desktop+mobile (fake UTC clock). Weekly results are local-only (`save.weeklies`, not synced) → cloud weekly sync PARTIAL |
+| — | — | §12 a11y/quality, §13 versioning | TODO | — |
 | — | — | §14–§18 P2 | TODO | — |
 
 ** Art-dependent item: temporary geometric prototypes allowed, kept `BLOCKED_ASSET`

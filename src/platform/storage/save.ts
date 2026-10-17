@@ -150,6 +150,8 @@ export interface PlumberSave {
   collections: string[];
   stats: Record<'child' | 'normal' | 'expert', PlumberModeStats>;
   dailies: Record<string, number>;
+  /** week (Monday, YYYY-MM-DD) -> best stars; local weekly archive (§10). */
+  weeklies: Record<string, number>;
   /** level -> {family, mode} recorded at win time (collections/stats). */
   fams: Record<string, { family: string; mode: string }>;
   /** Per-mode independent progress; `selected` is the last chosen mode. */
@@ -295,6 +297,7 @@ export function emptyPlumber(): PlumberSave {
     collections: [],
     stats: { child: { attempts: 0, wins: 0, hints: 0, skips: 0 }, normal: { attempts: 0, wins: 0, hints: 0, skips: 0 }, expert: { attempts: 0, wins: 0, hints: 0, skips: 0 } },
     dailies: {},
+    weeklies: {},
     fams: {},
     modes: { child: emptyModeProgress(), normal: emptyModeProgress(), expert: emptyModeProgress() },
     selected: 'child',
@@ -383,6 +386,7 @@ export function getPlumberSave(save: SaveData): PlumberSave {
     if (!g.dailies || typeof g.dailies !== 'object') g.dailies = {};
     if (!g.fams || typeof g.fams !== 'object') g.fams = {};
     if (!Array.isArray(g.tutorial)) g.tutorial = [];
+    if (!g.weeklies || typeof g.weeklies !== 'object') g.weeklies = {};
     if (!g.modes || typeof g.modes !== 'object' || !g.modes.child || !g.modes.normal || !g.modes.expert) {
       const legacy: PlumberSave = { ...emptyPlumber(), ...g };
       const derived = deriveModesFromLegacy(
@@ -494,6 +498,7 @@ export function sanitizeSave(raw: unknown): SaveData | null {
         collections: Array.isArray(po.collections) ? po.collections.filter((c): c is string => typeof c === 'string') : [],
         stats: validStats(po.stats),
         dailies: validDailies(po.dailies),
+        weeklies: validDailies(po.weeklies),
         fams: famsOut,
         modes,
         selected,
