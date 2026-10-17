@@ -5,7 +5,14 @@ import { DEFAULT_SETTINGS, mergeSettings, sanitizeSettings, type Settings } from
 
 export const SAVE_KEY = 'save-v1';
 export const BACKUP_KEY = 'save-backup-v1';
-export const SAVE_SCHEMA = 2;
+/**
+ * §13 independent versioning. Bumped to 3: v1→v2 distributed the single
+ * progression across modes; v2→v3 is an additive normalisation (per-mode saves
+ * gain `weeklies`/`tutorial` and settings gain the accessibility/quality flags).
+ * Older snapshots keep migrating losslessly; the pre-migration copy is kept in
+ * BACKUP_KEY so a user can roll back.
+ */
+export const SAVE_SCHEMA = 3;
 export const EXPORT_FORMAT = 'minigames-progress/1';
 
 export interface WaterSortSessionSave {
@@ -529,11 +536,34 @@ export async function loadSave(): Promise<SaveData> {
   try {
     const raw = await kvGet(SAVE_KEY);
     if (!raw) return emptySave();
-    const parsed: unknown = JSON.parse(raw);
+    const parsed = JSON.parse(raw) as { schemaVersion?: unknown };
+    const from = typeof parsed.schemaVersion === 'number' ? parsed.schemaVersion : 0;
+    // Keep a rollback copy before an on-disk migration rewrites the save.
+    if (from >= 1 && from < SAVE_SCHEMA) await kvSet(BACKUP_KEY, raw);
     return sanitizeSave(parsed) ?? emptySave();
   } catch {
     return emptySave();
   }
+}
+
+/** The pre-migration snapshot, if any (sanitized, never throws). */
+export async function readBackupSave(): Promise<SaveData | null> {
+  try {
+    const raw = await kvGet(BACKUP_KEY);
+    if (!raw) return null;
+    return sanitizeSave(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+/** §13 rollback: restore the pre-migration snapshot and make it current. */
+export async function restoreBackupSave(): Promise<SaveData | null> {
+  const backup = await readBackupSave();
+  if (!backup) return null;
+  backup.schemaVersion = SAVE_SCHEMA;
+  await storeSave(backup);
+  return backup;
 }
 
 export async function storeSave(save: SaveData): Promise<void> {

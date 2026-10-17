@@ -5,6 +5,8 @@ import {
   loadSave,
   mergeSaves,
   parseExport,
+  restoreBackupSave,
+  SAVE_SCHEMA,
   storeSave,
   type SaveData,
 } from '../platform/storage/save';
@@ -13,6 +15,7 @@ import { isLang, translate, type Lang } from '../platform/i18n';
 import { getGame, type GameContext, type GameHandle } from '../platform/games/registry';
 import { button, el, modal, toast } from '../platform/ui/ui';
 import { applyUpdate, canInstall, isInstalled, promptInstall } from '../platform/pwa/pwa';
+import { deleteGameCache, gameOfflineStatus, precacheGame } from '../platform/pwa/offline';
 import { SyncEngine } from '../platform/sync/engine';
 import { getStatus, subscribeStatus, type SyncStatus } from '../platform/sync/status';
 import { isSignedIn, getGuestId } from '../platform/auth/session';
@@ -81,6 +84,25 @@ export class Shell {
         const r = await this.engine.requestOtp(email);
         if (!r.code) return false;
         return this.engine.login(email, r.code);
+      },
+      schema: () => SAVE_SCHEMA,
+      offlineStatus: (gameId: string) => {
+        const m = getGame(gameId);
+        return m?.assetPaths ? gameOfflineStatus(m.id, m.assetsVersion ?? m.version, m.assetPaths) : Promise.resolve(null);
+      },
+      precacheGame: (gameId: string) => {
+        const m = getGame(gameId);
+        return m?.assetPaths ? precacheGame(m.id, m.assetsVersion ?? m.version, m.assetPaths) : Promise.resolve(null);
+      },
+      deleteGameCache: (gameId: string) => deleteGameCache(gameId),
+      restoreBackup: async () => {
+        const s = await restoreBackupSave();
+        if (!s) return false;
+        this.save = s;
+        this.settings = sanitizeSettings(s.settings);
+        this.applyTheme();
+        this.renderCatalog();
+        return true;
       },
     };
   }
@@ -176,6 +198,20 @@ export class Shell {
     grid.appendChild(pcard);
     wrap.appendChild(grid);
     this.app.appendChild(wrap);
+    void this.refreshOfflineBadges();
+  }
+
+  /** §13: reflect real cache state (not an assumption) on the plumber card. */
+  private async refreshOfflineBadges(): Promise<void> {
+    const mod = getGame('plumber');
+    if (!mod?.assetPaths) return;
+    const badge = this.app.querySelector('.game-card:last-child .offline-badge');
+    if (!badge) return;
+    try {
+      const st = await gameOfflineStatus(mod.id, mod.assetsVersion ?? mod.version, mod.assetPaths);
+      badge.textContent = st.ready ? `✓ ${this.t('catalog.offlineReady')}` : `⬇ ${this.t('catalog.offlineDownload')}`;
+      badge.classList.toggle('offline-badge-pending', !st.ready);
+    } catch { /* cache API unavailable: keep the neutral label */ }
   }
 
   private async exitToCatalog(): Promise<void> {
@@ -341,6 +377,19 @@ export class Shell {
     }
   }
 
+  private async restorePrevious(): Promise<void> {
+    const restored = await restoreBackupSave();
+    if (!restored) {
+      toast(this.toastRoot, this.t('settings.restoreNone'));
+      return;
+    }
+    this.save = restored;
+    this.settings = sanitizeSettings(restored.settings);
+    this.applyTheme();
+    toast(this.toastRoot, this.t('settings.restored'));
+    this.renderCatalog();
+  }
+
   private async resolveConflict(gameId: string, choice: 'local' | 'remote'): Promise<void> {
     const c = this.save.conflicts?.[gameId];
     if (!c) return;
@@ -450,6 +499,7 @@ export class Shell {
     actions.append(
       button(this.t('settings.export'), 'btn', () => this.exportProgress(), this.t('settings.export')),
       button(this.t('settings.import'), 'btn', () => this.importProgress(), this.t('settings.import')),
+      button(this.t('settings.restore'), 'btn', () => void this.restorePrevious(), this.t('settings.restore')),
       button(this.t('settings.rules'), 'btn', () => this.openRules(), this.t('settings.rules')),
       button(this.t('settings.close'), 'btn primary', () => close(), this.t('settings.close')),
     );

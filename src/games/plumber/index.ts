@@ -9,6 +9,8 @@ export function registerPlumber(): void {
     titleKey: 'plumber.name',
     descKey: 'plumber.tag',
     version: '0.1.0',
+    assetsVersion: '1',
+    assetPaths: ['assets/plumber/atlas.png', 'assets/plumber/atlas.json'],
     mount: async (ctx: GameContext): Promise<GameHandle> => {
       const level = ctx.level ?? 1;
       return PlumberGame.create(ctx, Math.max(1, level));

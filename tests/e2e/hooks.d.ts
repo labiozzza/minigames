@@ -59,6 +59,11 @@ declare global {
       syncNow(): Promise<void>;
       logout(): void;
       login(email: string): Promise<boolean>;
+      schema(): number;
+      restoreBackup(): Promise<boolean>;
+      offlineStatus(gameId: string): Promise<{ ready: boolean; cached: number; total: number; missing: string[] } | null>;
+      precacheGame(gameId: string): Promise<{ ready: boolean; cached: number; total: number; missing: string[] } | null>;
+      deleteGameCache(gameId: string): Promise<string[]>;
     };
   }
 }

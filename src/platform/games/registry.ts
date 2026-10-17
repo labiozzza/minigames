@@ -33,6 +33,10 @@ export interface GameModule {
   titleKey: string;
   descKey: string;
   version: string;
+  /** §13 independent asset-bundle version; changing it invalidates only this game's cache. */
+  assetsVersion?: string;
+  /** Files that must be cached for this game to be offline-ready. */
+  assetPaths?: string[];
   mount: (ctx: GameContext) => Promise<GameHandle>;
 }
 

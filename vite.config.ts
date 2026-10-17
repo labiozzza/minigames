@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { cacheName } from './src/platform/pwa/offline';
 
 // Test hooks (window.__PLUMBER__, solve shortcuts) are compiled in ONLY for
 // dev or explicit test builds (VITE_TEST_HOOKS=1). In release builds the flag
@@ -36,10 +37,20 @@ export default defineConfig(({ command }) => ({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,json}'],
+        // §13: game assets stay in the shell precache (offline-first) AND get
+        // mirrored into a per-game versioned cache that can be freed on demand
+        // without ever touching the IndexedDB save.
         navigateFallback: 'index.html',
         cleanupOutdatedCaches: true,
         clientsClaim: false,
         skipWaiting: false,
+        runtimeCaching: [
+          {
+            urlPattern: /\/assets\/plumber\//,
+            handler: 'CacheFirst',
+            options: { cacheName: cacheName('plumber', '1') },
+          },
+        ],
       },
       devOptions: { enabled: false },
     }),
