@@ -65,6 +65,8 @@ export class PlumberGame implements GameHandle {
   private timer: number | null = null;
   private moveMode = false;
   private valveMode = false;
+  /** Last input was keyboard: only then is the focus ring shown. */
+  private keyboardNav = false;
   private moveBtn: HTMLButtonElement | null = null;
   private valveBtn: HTMLButtonElement | null = null;
   private progBar: HTMLElement | null = null;
@@ -379,10 +381,10 @@ export class PlumberGame implements GameHandle {
     this.game.scene.start('plumber', {
       def: this.def,
       refs: {
-        onTapCell: (i: number) => this.onTapCell(i),
-        onSelectCell: (i: number) => this.onSelectCell(i),
-        onDragStart: (i: number) => this.onDragStart(i),
-        onMoveCell: (from: number, to: number) => this.onMoveCell(from, to),
+        onTapCell: (i: number) => { this.keyboardNav = false; this.onTapCell(i); },
+        onSelectCell: (i: number) => { this.keyboardNav = false; this.onSelectCell(i); },
+        onDragStart: (i: number) => { this.keyboardNav = false; this.onDragStart(i); },
+        onMoveCell: (from: number, to: number) => { this.keyboardNav = false; this.onMoveCell(from, to); },
         canMove: () => this.state?.phase === 'PREPARING' && this.hasMovable(),
         settings: () => {
           const s = this.ctx.settings;
@@ -446,11 +448,15 @@ export class PlumberGame implements GameHandle {
       this.undoStack.push(snapshot(this.state));
       if (this.undoStack.length > 200) this.undoStack.shift();
       let ok = false;
-      if (this.state.carried) ok = applyCommand(this.state, { type: 'place', index: i });
-      else {
+      if (this.state.carried) {
+        ok = applyCommand(this.state, { type: 'place', index: i });
+        // Placing finishes the action: drop back to normal (rotate) control.
+        if (ok) this.moveMode = false;
+      } else {
         ok = applyCommand(this.state, { type: 'pickup', index: i });
         if (!ok && this.state.inventoryLeft.length > 0) {
           ok = applyCommand(this.state, { type: 'placeStock', kind: this.state.inventoryLeft[0], index: i });
+          if (ok) this.moveMode = false;
         }
       }
       if (ok) {
@@ -507,13 +513,18 @@ export class PlumberGame implements GameHandle {
   /** Long press: carry the pipe under the finger, or place the carried one. */
   private onSelectCell(i: number): void {
     if (this.state.phase !== 'PREPARING' || !this.hasMovable()) return;
+    // During onboarding the guide teaches exactly one action; a long press must
+    // not quietly turn a "rotate" hint into a pickup.
+    const g = this.guideStep;
+    if (g && g.action !== 'pickup' && g.action !== 'place' && g.action !== 'placeStock') return;
     this.cursor = i;
     this.beginUndo();
     let ok = false;
-    if (this.state.carried) ok = applyCommand(this.state, { type: 'place', index: i });
+    let placed = false;
+    if (this.state.carried) { ok = applyCommand(this.state, { type: 'place', index: i }); placed = ok; }
     else ok = applyCommand(this.state, { type: 'pickup', index: i });
     if (ok) {
-      this.moveMode = true;
+      this.moveMode = !placed;
       this.redoStack = [];
       this.audio.select();
       this.hintCell = -1;
@@ -530,7 +541,6 @@ export class PlumberGame implements GameHandle {
   private onDragStart(i: number): void {
     if (this.state.phase !== 'PREPARING') return;
     this.cursor = i;
-    this.scene?.setFocus(i);
   }
 
   /** Drag-and-drop: move a pipe from `from` to `to` in a single undo step. */
@@ -546,7 +556,9 @@ export class PlumberGame implements GameHandle {
       if (ok) ok = applyCommand(this.state, { type: 'place', index: to });
     }
     if (ok) {
-      this.moveMode = true;
+      // A drag-and-drop is a completed action: never leave move mode armed, so
+      // the very next tap on another pipe rotates it again.
+      if (this.state.carried === null) this.moveMode = false;
       this.redoStack = [];
       this.audio.select();
       this.hintCell = -1;
@@ -624,6 +636,22 @@ export class PlumberGame implements GameHandle {
   }
 
   private toggleMoveMode(): void {
+    // Leaving "move" while a pipe is in hand cancels the carry by restoring the
+    // pre-pickup snapshot — the pipe and its config are never lost.
+    if (this.state.carried) {
+      const prev = this.undoStack.pop();
+      if (prev) {
+        this.redoStack.push(snapshot(this.state));
+        restore(this.state, prev);
+      }
+      this.moveMode = false;
+      this.audio.ui();
+      this.dev?.sync(this.state);
+      this.syncScene(null);
+      this.refreshChrome();
+      void this.persist();
+      return;
+    }
     this.moveMode = !this.moveMode;
     if (this.moveMode) this.valveMode = false;
     this.audio.ui();
@@ -1163,7 +1191,12 @@ export class PlumberGame implements GameHandle {
     if (!this.scene) return;
     const kinds = this.state.rots.map((_, i) => kindAt(this.state, i));
     this.scene.sync(this.state.rots, this.state.water, this.state.waterColor, this.fractions(), this.state.phase === 'FAILED' ? (this.state.errorCell ?? this.state.leakCell ?? -1) : -1, this.hintCell, animate, kinds, this.state.valves, this.state.cameFrom);
-    this.scene.setFocus(this.cursor);
+    this.scene.setFocus(this.cursor, this.keyboardNav);
+    const valid: number[] = [];
+    if (this.state.carried) {
+      for (let i = 0; i < kinds.length; i++) if (kinds[i] === 'empty') valid.push(i);
+    }
+    this.scene.setCarry(this.state.carried ? this.state.carried.kind : null, valid);
     this.updateGuide();
   }
 
@@ -1218,6 +1251,9 @@ export class PlumberGame implements GameHandle {
     else if (ph === 'PAUSED') this.startBtn.textContent = t('plumber.resume');
     else if (ph === 'WON') this.startBtn.textContent = t('plumber.next');
     this.undoBtn.disabled = ph !== 'PREPARING' || this.undoStack.length === 0;
+    // A carried pipe must always be visible: keep move mode on while it is in hand
+    // (the only ways out are placing it or cancelling via the move button).
+    if (this.state.carried) this.moveMode = true;
     if (this.moveBtn) {
       const showMove = this.state.inventoryLeft.length > 0 || this.state.carried !== null || this.hasMovable();
       this.moveBtn.style.display = showMove || this.moveMode ? '' : 'none';
@@ -1247,7 +1283,8 @@ export class PlumberGame implements GameHandle {
       const nx = Math.min(w - 1, Math.max(0, cx + dx));
       const ny = Math.min(h - 1, Math.max(0, cy + dy));
       this.cursor = ny * w + nx;
-      this.scene?.setFocus(this.cursor);
+      this.keyboardNav = true;
+      this.scene?.setFocus(this.cursor, true);
     };
     switch (e.key) {
       case ' ':
@@ -1255,6 +1292,7 @@ export class PlumberGame implements GameHandle {
         this.onStartPause();
         break;
       case 'Enter':
+        this.keyboardNav = true;
         this.onTapCell(this.cursor);
         break;
       case 'ArrowLeft': moveCursor(-1, 0); break;
@@ -1489,6 +1527,10 @@ export class PlumberGame implements GameHandle {
       rotations: () => this.state.playerRotations,
       kindAt: (i: number) => kindAt(this.state, i),
       carried: () => (this.state.carried ? this.state.carried.kind : null),
+      moveMode: () => this.moveMode,
+      emptyArt: () => this.scene?.emptyArtCount() ?? -1,
+      carryChip: () => this.scene?.carryChipVisible() ?? false,
+      focusRing: () => this.scene?.focusRingVisible() ?? false,
       rotatable: () => this.def.cells.map((c, i) => ({ c, i })).filter(({ c, i }) => ['straight', 'elbow', 't', 'cross', 'cap', 'valve', 'filter', 'mixer', 'distributor'].includes(kindAt(this.state, i)) && !c.locked).map(({ i }) => i),
       usesFallback: () => this.scene?.usesFallback() ?? null,
       spriteAngles: () => this.scene?.spriteAngles() ?? [],

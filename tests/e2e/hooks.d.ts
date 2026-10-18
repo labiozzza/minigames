@@ -19,6 +19,10 @@ declare global {
       rotations(): number;
       kindAt(i: number): string;
       carried(): string | null;
+      moveMode(): boolean;
+      emptyArt(): number;
+      carryChip(): boolean;
+      focusRing(): boolean;
       cellCenter(i: number): { x: number; y: number } | null;
       volumeOk(): boolean;
       start(): void;

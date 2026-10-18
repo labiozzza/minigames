@@ -19,9 +19,8 @@ const KIND_TEXTURE: Record<string, string> = {
   receiver: 'receiver_basic',
 };
 
-/** Field art (no ports): ground texture + cosmetic decor prop. */
+/** Field art (no ports): ground texture only. Empty cells are plain ground. */
 const GROUND_FRAME = 'env_ground';
-const DECOR_FRAME = 'env_garden_bush';
 /** Art variants for a logical `blocked` cell — chosen deterministically per cell. */
 const OBSTACLE_FRAMES = ['obstacle_rock', 'obstacle_rocks', 'obstacle_mound'];
 
@@ -98,8 +97,12 @@ export class PlumberScene extends Phaser.Scene {
   private oy = 0;
   private focusGfx!: Phaser.GameObjects.Graphics;
   private focus = -1;
+  /** Focus ring is a *keyboard* affordance: hidden for pointer/touch input. */
+  private focusKeyboard = false;
   private guideGfx!: Phaser.GameObjects.Graphics;
   private guideIcon: Phaser.GameObjects.Text | null = null;
+  private carryGfx!: Phaser.GameObjects.Graphics;
+  private carryChip: Phaser.GameObjects.Image | null = null;
   private errorGfx!: Phaser.GameObjects.Graphics;
   private pointers = new Map<number, PointerTrack>();
   private pinchStart = 0;
@@ -161,6 +164,8 @@ export class PlumberScene extends Phaser.Scene {
     this.focusGfx.setDepth(1000);
     this.guideGfx = this.add.graphics();
     this.guideGfx.setDepth(1001);
+    this.carryGfx = this.add.graphics();
+    this.carryGfx.setDepth(998);
     this.errorGfx = this.add.graphics();
     this.errorGfx.setDepth(1002);
     this.installCamera();
@@ -237,12 +242,17 @@ export class PlumberScene extends Phaser.Scene {
       this.zoomAt(p.x, p.y, dy > 0 ? 0.9 : 1.1);
     });
     // Safety net: releases outside the canvas must not leave a stuck drag.
+    // Phaser's Pointer.id is the DOM pointerId, so window events match the map.
     if (typeof window !== 'undefined') {
       window.addEventListener('pointerup', (e) => {
         const t = this.pointers.get(e.pointerId);
         if (t) this.endTrack(e.pointerId, null, false);
       });
       window.addEventListener('pointercancel', (e) => this.endTrack(e.pointerId, null, false));
+      // Losing focus (tab switch, system gesture) must drop every pending track.
+      window.addEventListener('blur', () => {
+        for (const id of [...this.pointers.keys()]) this.endTrack(id, null, false);
+      });
     }
   }
 
@@ -257,6 +267,9 @@ export class PlumberScene extends Phaser.Scene {
       id: p.id, startX: p.x, startY: p.y, lastX: p.x, lastY: p.y,
       cell: cellIdx, startT: this.time.now, moved: false, dragging: false, longTimer: 0,
     };
+    // Register the pointer *before* arming the hold timer: the first touch sees
+    // size 0 here, so checking size===1 later would otherwise never start it.
+    this.pointers.set(p.id, track);
     if (this.pointers.size === 1 && cellIdx >= 0 && !this.prefs().noDrag) {
       track.longTimer = window.setTimeout(() => {
         if (!track.moved && this.pointers.size === 1 && this.refs.onSelectCell && this.refs.canMove?.()) {
@@ -265,7 +278,6 @@ export class PlumberScene extends Phaser.Scene {
         }
       }, 380);
     }
-    this.pointers.set(p.id, track);
     if (this.pointers.size === 2) {
       const [a, b] = [...this.pointers.values()];
       this.pinchStart = Math.hypot(a.lastX - b.lastX, a.lastY - b.lastY);
@@ -357,18 +369,47 @@ export class PlumberScene extends Phaser.Scene {
   }
 
   /** Visible keyboard focus ring (independent of hint/selection). */
-  setFocus(index: number): void {
+  setFocus(index: number, keyboard = false): void {
     this.focus = index;
+    this.focusKeyboard = keyboard;
     this.drawFocus();
   }
 
   private drawFocus(): void {
     if (!this.focusGfx) return;
     this.focusGfx.clear();
+    if (!this.focusKeyboard) return;
     if (this.focus < 0 || this.focus >= this.def.gridW * this.def.gridH) return;
     const { x, y } = this.cellXY(this.focus);
     this.focusGfx.lineStyle(3, 0xffffff, 0.9);
     this.focusGfx.strokeRoundedRect(x + 2, y + 2, this.cell - 4, this.cell - 4, 8);
+  }
+
+  /**
+   * Carry affordance (take→place): a floating chip of the carried pipe plus an
+   * accent outline on every cell the pipe can be dropped into. Always cleared
+   * when nothing is carried, so no phantom "carry" frame ever sticks around.
+   */
+  setCarry(carried: string | null, valid: number[]): void {
+    if (this.carryGfx) this.carryGfx.clear();
+    if (this.carryChip) { this.carryChip.destroy(); this.carryChip = null; }
+    if (!carried) return;
+    const accent = 0x6fd3ff;
+    if (this.carryGfx) {
+      for (const i of valid) {
+        const { x, y } = this.cellXY(i);
+        this.carryGfx.lineStyle(3, accent, 0.9);
+        this.carryGfx.strokeRoundedRect(x + 4, y + 4, this.cell - 8, this.cell - 8, 8);
+      }
+    }
+    const frame = KIND_TEXTURE[carried];
+    if (frame && this.hasFrame(frame)) {
+      const cx = this.ox + (this.cell * this.def.gridW) / 2;
+      const chip = this.add.image(cx, this.oy - this.cell * 0.5, 'plumber', frame);
+      chip.setDisplaySize(this.cell * 0.7, this.cell * 0.7);
+      chip.setDepth(1004);
+      this.carryChip = chip;
+    }
   }
 
   private reducedMotion(): boolean {
@@ -519,18 +560,8 @@ export class PlumberScene extends Phaser.Scene {
         img.setDepth(1);
         this.sprites.push(img);
       } else if (kind === 'empty') {
-        // Free ground: no tile and no marker — the ground layer shows through.
-        // A small cosmetic prop may sit in the corner (never blocks, never rotatable).
-        const decor = this.decorFor(i);
-        if (decor) {
-          const d = this.add.image(x + this.cell * 0.72, y + this.cell * 0.78, 'plumber', decor);
-          d.setDisplaySize(this.cell * 0.4, this.cell * 0.4);
-          d.setAlpha(0.92);
-          d.setDepth(0);
-          this.sprites.push(d);
-        } else {
-          this.sprites.push(null);
-        }
+        // Free ground: no tile, no marker and no scenery — only the ground shows.
+        this.sprites.push(null);
       } else {
         const g = this.add.graphics();
         g.setData('cell', i);
@@ -561,12 +592,6 @@ export class PlumberScene extends Phaser.Scene {
 
   private hasFrame(frame: string): boolean {
     return !this.fallback && this.textures.get('plumber').has(frame);
-  }
-
-  /** Cosmetic corner prop on some empty cells — scenery only, never gameplay. */
-  private decorFor(i: number): string | null {
-    if (!this.hasFrame(DECOR_FRAME)) return null;
-    return (i * 40503 >>> 0) % 3 === 0 ? DECOR_FRAME : null;
   }
 
   /** One cohesive ground for the whole field: a soil texture clipped to the bounds. */
@@ -965,6 +990,24 @@ export class PlumberScene extends Phaser.Scene {
 
   usesFallback(): boolean {
     return this.fallback;
+  }
+
+  /** Empty cells must be plain ground: any sprite sitting on one is a regression. */
+  emptyArtCount(): number {
+    const n = this.def.gridW * this.def.gridH;
+    let count = 0;
+    for (let i = 0; i < n; i++) if (this.sprites[i] && this.kindOf(i) === 'empty') count++;
+    return count;
+  }
+
+  /** True while a carried-pipe chip is drawn (take→place affordance). */
+  carryChipVisible(): boolean {
+    return this.carryChip !== null;
+  }
+
+  /** True when the white keyboard focus ring is currently drawn. */
+  focusRingVisible(): boolean {
+    return this.focusKeyboard && this.focus >= 0;
   }
 
   /** Quarter-turns currently drawn per cell (-1 where a primitive fallback is used). */
